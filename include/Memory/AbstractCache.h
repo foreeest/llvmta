@@ -425,7 +425,7 @@ bool AbstractCacheImpl<T, C>::lessequal(const AbstractCache &ay) const {
 template <CacheTraits *T, class C>
 void AbstractCacheImpl<T, C>::enterScope(const PersistenceScope &scope) {
   for (unsigned i = 0; i < T->N_SETS; ++i) {
-    SetType newCacheAnalysisSet(*cacheSets[i]);
+    SetType newCacheAnalysisSet(*cacheSets[i]); // std::vector<SharedPtr>
     newCacheAnalysisSet.enterScope(scope);
     cacheSets[i] = cacheSetStorage.insert(newCacheAnalysisSet);
   }
@@ -434,8 +434,12 @@ void AbstractCacheImpl<T, C>::enterScope(const PersistenceScope &scope) {
 template <CacheTraits *T, class C>
 void AbstractCacheImpl<T, C>::leaveScope(const PersistenceScope &scope) {
   for (unsigned i = 0; i < T->N_SETS; ++i) {
-    SetType newCacheAnalysisSet(*cacheSets[i]);
+    SetType newCacheAnalysisSet(*cacheSets[i]); // SetType是模板参数C，目前是ElementWise
+    // C在DispatchMemory中是 CompositionalAbstractCache<CacheAna, ElePersis> -> 套娃
+    // 这里CacheAna应该是 CompositionalAbstractCache<Must, May> CacheAna;
+    // May可能是LruMinAgeAbstractCache<CacheConfig>
     newCacheAnalysisSet.leaveScope(scope);
+    // cacheSetStorage
     cacheSets[i] = cacheSetStorage.insert(newCacheAnalysisSet);
   }
 }

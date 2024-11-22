@@ -34,6 +34,8 @@ using namespace llvm;
 // Global options
 /* for now, this is also the category for all options not yet sorted into a
  * category */
+// cl就是command line相关的
+// 其他opt会分类进来OptionCategory
 cl::OptionCategory LLVMTACat("0. LLVMTA General Options");
 cl::OptionCategory ContextSensitivityCat("1. Context Sensitivity Options");
 cl::OptionCategory
@@ -45,6 +47,23 @@ cl::OptionCategory
     CoRunnerSensitiveCat("6. Multi-Core Corunner-sensitive Analysis");
 cl::OptionCategory MultiCoreCat("7. TODO");
 //多核改动标记
+
+/* 目前配置如下
+llvmta -disable-tail-calls -float-abi=hard -mattr=-neon,+vfp2 -O0 
+--ta-muarch-type=outoforder --ta-memory-type=separatecaches --ta-strict=false 
+--ta-loop-bounds-file=/workspaces/llvmta/testcases/test/LoopAnnotations.csv 
+--ta-loop-lowerbounds-file=/workspaces/llvmta/testcases/test/LLoopAnnotations.csv 
+--ta-num-callsite-tokens=1 
+--core-info=/workspaces/llvmta/testcases/test/CoreInfo.json --core-numbers=2 
+--shared-cache-Persistence-Analysis=false 
+--ta-l2cache-persistence=elementwise 
+--ta-icache-linesize=64 --ta-icache-nsets=64 --ta-icache-assoc=8 
+--ta-dcache-linesize=64 --ta-dcache-assoc=8 --ta-dcache-nsets=64 
+--ta-l2cache-linesize=64 --ta-l2cache-assoc=8 --ta-l2cache-nsets=64 
+--ta-mem-latency=100 --ta-Icache-latency=10 --ta-Dcache-latency=10 --ta-L2-latency=50 
+-debug-only= optimized.ll
+*/
+
 cl::opt<std::string>
     coreInfo("core-info", cl::init("CoreInfo.json"),
              cl::desc("Used to descripe which core runs which function"),
@@ -111,7 +130,7 @@ cl::opt<MemoryTopologyType> MemTopType(
         clEnumValN(MemoryTopologyType::SEPARATECACHES, "separatecaches",
                    "Separate instruction and data caches in front of unified "
                    "background memory"),
-        clEnumValN(MemoryTopologyType::PRIVINSTRSPMDATASHARED,
+        clEnumValN(MemoryTopologyType::PRIVINSTRSPMDATASHARED, // 这是什么？私有指令公有数据
                    "priv-instr-spm-data-shared",
                    "Private instruction SPM, potentially shared data memory.")),
     cl::Required, cl::cat(HardwareDescrCat));
@@ -133,6 +152,7 @@ cl::opt<bool>
                                "default, is is disabled (false)."),
                       cl::cat(CoRunnerSensitiveCat));
 
+// 这个我们选了啥？都没选？
 cl::bits<CompositionalAnalysisType> CompAnaType(
     "ta-comp-type",
     cl::desc("Choose which caches are supposed to be analysed compositional."),
@@ -142,8 +162,8 @@ cl::bits<CompositionalAnalysisType> CompAnaType(
                clEnumValN(CompositionalAnalysisType::DCACHE, "dcache",
                           "Data cache separated"),
                clEnumValN(CompositionalAnalysisType::DRAMREFRESH, "dramrefresh",
-                          "DRAM refreshes separated"),
-               clEnumValN(CompositionalAnalysisType::SHAREDBUSBLOCKING,
+                          "DRAM refreshes separated"), // 考虑内存刷新
+               clEnumValN(CompositionalAnalysisType::SHAREDBUSBLOCKING, // 考虑总线阻塞
                           "sharedbusblocking", "Blocking on the shared bus")),
     cl::cat(LLVMTACat));
 
@@ -415,9 +435,9 @@ cl::opt<bool>
               cl::desc("Enables the clever UCB mode that handles spatial "
                        "locality in a more precise way. (default false)"),
               cl::cat(LLVMTACat));
-
-cl::bits<AnalysisType> AnaType(
-    "ta-ana-type",
+// 定义命令行参数
+cl::bits<AnalysisType> AnaType( // 模板类
+    "ta-ana-type", // cmd命令
     cl::desc("Choose the type of analysis to run (default 'timing')"),
     cl::CommaSeparated,
     cl::values(
@@ -738,7 +758,7 @@ cl::opt<int> UntilIterationMeasurement(
              "Note that there is also an iteration 0. A negative value "
              "disables this dedicated measurements. This parameter is ignored "
              "in co-runner-insensitive analysis."),
-    cl::cat(CoRunnerSensitiveCat));
+    cl::cat(CoRunnerSensitiveCat)); // 分类到一个类别
 
 cl::opt<GetEdges_method> ArrivalCurveLoopGetInnerEdgesMethod(
     "ta-arrival-curve-loop-get-inner-edges-method",

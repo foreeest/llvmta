@@ -53,11 +53,11 @@
  * instruction) which will be taken by the decode stage The WB_FIN_IND only
  * serves to see which instruction was finished in the last cycle (for isFinal)
  */
-#define IF_ID_IND 0
+#define IF_ID_IND 0 // 取指 -> cache
 #define ID_EX_IND 1
-#define EX_MEM_IND 2
-#define MEM_WB_IND 3
-#define WB_FIN_IND 4
+#define EX_MEM_IND 2 
+#define MEM_WB_IND 3 // 访存 -> cache
+#define WB_FIN_IND 4 // 写回 -> cache?
 #define NUMBEROFSTAGES 5
 
 /**
@@ -79,6 +79,7 @@ namespace TimingAnalysisPass {
  * The resulting analysis is basically a counter-based microarchitectural
  * analysis.
  */
+// 初步读起来感觉像是CPU模拟器
 template <class MemoryTopology>
 class InOrderPipelineState
     : public MicroArchitecturalState<
@@ -94,7 +95,7 @@ public:
   typedef MicroArchitecturalState<
       InOrderPipelineState<MemoryTopology>,
       std::tuple<InstrContextMapping &, AddressInformation &>>
-      SuperClass;
+      SuperClass; // 父类
 
   typedef typename SuperClass::StateSet StateSet;
 
@@ -167,7 +168,7 @@ public:
    * Checks whether a ProgramLocation left the pipeline after the last cycle.
    */
   virtual bool isFinal(ExecutionElement &pl);
-
+  // 这啥意思？
   virtual bool isWaitingForJoin() const { return memory.isWaitingForJoin(); }
 
   /// \see superclass
@@ -289,7 +290,7 @@ private:
   /**
    * Some attached memory which is accessed for data.
    */
-  MemoryTopology memory;
+  MemoryTopology memory; // 目前这个填的应该是JJYSCM
 
   /**
    * Temporary storage of the accessId for the instruction access
@@ -397,8 +398,8 @@ InOrderPipelineState<MemoryTopology>::cycle(
   InOrderPipelineState succ(*this);
 
   // Reset flags that only apply for one state
-  succ.stallMemory = false;
-  succ.interlock = false;
+  succ.stallMemory = false; // 访存正在进行
+  succ.interlock = false; // data没准备好
 
   // Increment the base time counter for the successor state
   ++succ.time;
@@ -410,7 +411,7 @@ InOrderPipelineState<MemoryTopology>::cycle(
   ConvergenceType soFarDetectedConvergence = POTENTIALLY_NOT_CONVERGED;
 #endif
 
-  for (auto &iopsSucc : succ.cycleMemoryTopology()) {
+  for (auto &iopsSucc : succ.cycleMemoryTopology()) { // 所有可能后继iops
     // assert cleared final stage
     assert(iopsSucc.inflightInstruction[WB_FIN_IND] == boost::none &&
            "Final should be cleared");
@@ -423,7 +424,7 @@ InOrderPipelineState<MemoryTopology>::cycle(
 #endif
       );
     } else {
-      // process Pipeline stages
+      // process Pipeline stages, 倒行逆施
       iopsSucc.processWriteBackStage();
 
       for (auto &iopsMemSucc : iopsSucc.processMemoryStage(dep)) {
@@ -780,6 +781,7 @@ void InOrderPipelineState<MemoryTopology>::accessDataFromMemoryTopology(
   }
 }
 
+// 约414行调用，iops的cycle
 template <class MemoryTopology>
 std::list<InOrderPipelineState<MemoryTopology>>
 InOrderPipelineState<MemoryTopology>::cycleMemoryTopology() {
@@ -815,14 +817,15 @@ InOrderPipelineState<MemoryTopology>::cycleMemoryTopology() {
       }
     }
   }
-  std::list<MemoryTopology> res = memory.cycle(potentialDataMissesPending);
+  std::list<MemoryTopology> res = memory.cycle(potentialDataMissesPending); // JJYSMemTop的
+  // 应该是模拟一个周期的访存
   std::list<InOrderPipelineState<MemoryTopology>> resultList;
   for (auto &mt : res) {
     InOrderPipelineState<MemoryTopology> iops(*this);
     iops.memory = mt;
     resultList.push_back(iops);
   }
-  return resultList;
+  return resultList; // list，每个元素是mem cycle过iops, 即一个周期后的全部可能状态
 }
 
 /**
@@ -1236,13 +1239,13 @@ void InOrderPipelineState<MemoryTopology>::processInstructionDecodeStage() {
 
 template <class MemoryTopology>
 void InOrderPipelineState<MemoryTopology>::processInstructionFetchStage() {
-  if (flushedFetchStage) {
+  if (flushedFetchStage) { // what is flushedfetch? 冲掉指令，原因如分支预测错误等
     instructionAccessFinished = false;
     flushedFetchStage = false;
-    if (needPersistenceScopes()) {
+    if (needPersistenceScopes()) { // 只要有某个cache用persistence就进来
       // If we just enter a scope after a speculation flush, do so
       int nextPopulatedStage = IF_ID_IND;
-      while (nextPopulatedStage < NUMBEROFSTAGES &&
+      while (nextPopulatedStage < NUMBEROFSTAGES && // 5
              !inflightInstruction[nextPopulatedStage]) {
         ++nextPopulatedStage;
       }
@@ -1250,26 +1253,31 @@ void InOrderPipelineState<MemoryTopology>::processInstructionFetchStage() {
              "We flush pipe but have no flushing instr?");
       auto nextaddr = inflightInstruction[nextPopulatedStage].get().first;
       if (StaticAddrProvider->hasMachineInstrByAddr(this->pc.getPc().first) &&
-          StaticAddrProvider->hasMachineInstrByAddr(nextaddr)) {
+          StaticAddrProvider->hasMachineInstrByAddr(nextaddr)) { // 这个类在LLVMPass
         auto fetchinstr =
             StaticAddrProvider->getMachineInstrByAddr(this->pc.getPc().first);
         auto nextinstr = StaticAddrProvider->getMachineInstrByAddr(nextaddr);
-        auto edge =
+        auto edge = // 应该是从一个程序点指向下一个程序点的边
             std::make_pair(nextinstr->getParent(), fetchinstr->getParent());
+            // what is parent?那个machineInstr应该是dependencies/llvm里的parent在里面就是
+            // MachineBasicBlock
         if (edge.first != edge.second &&
-            PersistenceScopeInfo::getInfo().entersScope(edge)) {
+            PersistenceScopeInfo::getInfo().entersScope(edge)) { // 用于检查给定的边缘
+            // 是否标志着持久性作用域的开始或结束。 怎么中间多个s？
           for (auto scope :
-               PersistenceScopeInfo::getInfo().getEnteringScopes(edge)) {
+               PersistenceScopeInfo::getInfo().getEnteringScopes(edge)) { // 给定addr，给持久范围
+               // 获取给定边缘处开始或结束的所有持久性作用域
             DEBUG_WITH_TYPE(
                 "persistence",
                 dbgs() << "We are going to enter a scope after speculation: "
                        << scope.getId() << "\n");
-            memory.enterScope(scope);
+            memory.enterScope(scope); // what do you do?JJYCM会触发cache和Mem
           }
         }
       }
     }
     instructionAccessId = memory.accessInstr(this->pc.getPc().first, 1);
+    // 这怎么说？
   } else {
     if (instructionAccessId) {
       if (memory.finishedInstrAccess(*instructionAccessId)) {
@@ -1281,7 +1289,7 @@ void InOrderPipelineState<MemoryTopology>::processInstructionFetchStage() {
     }
     if (!inflightInstruction[IF_ID_IND] && instructionAccessFinished) {
       // fetch the next instruction
-      auto fetchedElement = this->pc.fetchNextInstruction();
+      auto fetchedElement = this->pc.fetchNextInstruction(); // 干了啥？取指并更新上下文
       inflightInstruction[IF_ID_IND] = fetchedElement;
       instructionAccessFinished = false;
       if (needPersistenceScopes()) {

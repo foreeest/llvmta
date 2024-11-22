@@ -106,7 +106,7 @@ template <CacheTraits *CacheConfig, class Must>
 inline AbstractCache *makeDirtinessCache(PersistenceType persType,
                                          bool assumeEmptyCache) {
   typedef LruMinAgeAbstractCache<CacheConfig> May;
-  if (CacheConfig->WRITEBACK && AnalyseDirtiness) {
+  if (CacheConfig->WRITEBACK && AnalyseDirtiness) { // 后者默认false
     typedef DirtinessAnalysis<CacheConfig, Must, May> CacheAna;
     return makePersistenceCache<CacheConfig, CacheAna>(persType,
                                                        assumeEmptyCache);
@@ -134,7 +134,7 @@ makeOptionsCache(CacheReplPolicyType replpol, PersistenceType persType,
   assert(replpol == CacheReplPolicyType::LRU &&
          "We do not support FIFO yet"); // TODO support FIFO caches
 
-  if (arrayAwareMust) {
+  if (arrayAwareMust) { // 找它真假，150行左右写了false
     assert(ArrayAnalysis);
     return makeDirtinessCache<CacheConfig,
                               LruMaxAgeArrayAwareCache<CacheConfig>>(
@@ -146,7 +146,7 @@ makeOptionsCache(CacheReplPolicyType replpol, PersistenceType persType,
 }
 
 AbstractCache *CacheFactory::makeOptionsInstrCache(bool assumeEmptyCache) {
-  return makeOptionsCache<&icacheConf>(
+  return makeOptionsCache<&icacheConf>( // LRU ELEWISE
       InstrCacheReplPolType, InstrCachePersType, assumeEmptyCache,
       CompAnaType.isSet(CompositionalAnalysisType::ICACHE), false);
 }
@@ -180,7 +180,7 @@ CacheFactory::makeOptionsDataCacheIgnComp(bool assumeEmptyCache) {
 void configureCyclingMemories() {
 
   fixedLatencyCyclingMemoryConfig.latency = Latency;
-  fixedLatencyCyclingMemoryConfig.perWordLatency = PerWordLatency;
+  fixedLatencyCyclingMemoryConfig.perWordLatency = PerWordLatency; // Word是什么
   oneCycleFixedLatencyCyclingMemoryConfig.latency = 0;
   oneCycleFixedLatencyCyclingMemoryConfig.perWordLatency = 1;
 

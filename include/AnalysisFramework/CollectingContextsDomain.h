@@ -36,7 +36,7 @@ namespace TimingAnalysisPass {
  * Class implementing a dummy analysis that does nothing.
  * Automatically, via the context-sensitive framework, this analysis collect all
  * contexts that are created during and analysis. This analysis is used as a
- * preprocessing analysis to all microarchitectural analyses.
+ * **preprocessing analysis** to all microarchitectural analyses.
  */
 class CollectingContextsDomain
     : public AnalysisDomain<CollectingContextsDomain, MachineInstr,

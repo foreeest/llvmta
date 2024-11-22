@@ -50,7 +50,7 @@ class Directive;
  * - to model multiple possible callees for one call site
  * - to model multiple call sites for one callee
  */
-enum class PartitionTokenType {
+enum class PartitionTokenType { // 分支、循环、函数
   NONE,     ///< Neutral Element, technical reasons
   IF,       ///< Partition on the outcome of an if
   LOOPPEEL, ///< Partition on the i-th iteration

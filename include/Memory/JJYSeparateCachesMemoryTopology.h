@@ -365,6 +365,7 @@ private:
           cl(CL_BOT) {}
   };
 
+  // 这应该可以理解为整个MemTopo中的Cache组件的封装
   struct MemoryComponent {
     /// Queue holding future accesses
     /// TODO!!!!!!!!
@@ -604,7 +605,9 @@ template <AbstractCache *(*makeInstrCache)(bool),
 void JJYSeparateCachesMemoryTopology<makeInstrCache, makeDataCache, makeL2Cache,
                                      BgMem>::enterScope(const PersistenceScope
                                                             &scope) {
-  instructionComponent.cache->enterScope(scope);
+  // memoryCompnent是本类中定义的一个结构体，这里的cache是一个AbstrctCache类
+  instructionComponent.cache->enterScope(scope); // 在dispatchMemory中追踪得AbstractCacheImpl
+  // AbstractCache 425行
   dataComponent.cache->enterScope(scope);
   L2Component.cache->enterScope(scope);
   if (!justEntered) {
@@ -649,11 +652,11 @@ void JJYSeparateCachesMemoryTopology<makeInstrCache, makeDataCache, makeL2Cache,
 }
 
 // cycle is called from the pipeline
-template <AbstractCache *(*makeInstrCache)(bool),
+template <AbstractCache *(*makeInstrCache)(bool), // 用函数来当模板参数？
           AbstractCache *(*makeDataCache)(bool),
           AbstractCache *(*makeL2Cache)(bool), class BgMem>
 std::list<JJYSeparateCachesMemoryTopology<makeInstrCache, makeDataCache,
-                                          makeL2Cache, BgMem>>
+                                          makeL2Cache, BgMem>> // 返回值是本类的list
 JJYSeparateCachesMemoryTopology<makeInstrCache, makeDataCache, makeL2Cache,
                                 BgMem>::cycle(bool potentialDataMissesPending)
     const {
@@ -678,7 +681,7 @@ JJYSeparateCachesMemoryTopology<makeInstrCache, makeDataCache, makeL2Cache,
     for (auto &startdataTopology : startinstrTopology.mystartDataAccess()) {
       // Cycle background memory
       for (auto &memory :
-           startdataTopology.memory.cycle(potentialDataMissesPending)) {
+           startdataTopology.memory.cycle(potentialDataMissesPending)) { // 又是谁的cycle？
         JJYSeparateCachesMemoryTopology afterbgmemcycle(startdataTopology);
         afterbgmemcycle.memory = memory; // memorytopology
 

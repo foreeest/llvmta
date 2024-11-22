@@ -56,20 +56,23 @@ namespace TimingAnalysisPass {
  * context-sensitive analysis and wraps a cycle-based formulation of
  * microarchitecture to-analyse to the granularity of instructions.
  */
+// 此份文件共三个类：StateExplorationDomain 和 StateExplorationWithJoinDomain 
+// 是 StateExplorationDomainBase 的派生类，它们分别实现了不包含和包含状态合并的状态空间探索。
 template <template <class> class StateExplorationDom, class MicroArchState>
 class StateExplorationDomainBase
     : public ContextAwareAnalysisDomain<StateExplorationDom<MicroArchState>,
                                         MachineInstr,
                                         typename MicroArchState::StateDep> {
+                                          // 继承了llvmta paper重要接口1
   /**
    * This is a compile-time	assert that we only want this template to be
    * instantiated for classes inheriting and thereby implementing class
    * MicroArchitecturalState.
    */
   BOOST_STATIC_ASSERT(
-      boost::is_base_of<MicroArchitecturalState<
+      boost::is_base_of<MicroArchitecturalState< // 语法， 两个参数分别是： Base, Derived
                             MicroArchState, typename MicroArchState::StateDep>,
-                        MicroArchState>::value);
+                        MicroArchState>::value); // MicroArchState 必须继承MicroArchitecturalState
   // We require the operator<< for states
   BOOST_STATIC_ASSERT(
       boost::has_left_shift<std::ostream, MicroArchState>::value);
@@ -100,20 +103,20 @@ public:
 
   /// When is analysis information required by state graph construction
   static bool anainfoBeforeRequired(const MachineInstr *MI) {
-    return (MI == getFirstInstrInBB(MI->getParent())) || MI->isCall();
+    return (MI == getFirstInstrInBB(MI->getParent())) || MI->isCall(); // parent是什么？
   }
   static bool anainfoAfterRequired(const MachineInstr *MI) {
     return MI->isCall() || isEndInstr(*MI->getParent(), MI);
   }
 
   // Make StateDep usable again
-  typedef typename MicroArchState::StateDep StateDep;
+  typedef typename MicroArchState::StateDep StateDep; 
 
   typedef MicroArchState State;
 
   /**
    * See superclass first.
-   * This transfer function should wrap the cycle-based microarchitectural
+   * This transfer function should wrap the cycle-based microarchitectural // 以cpu周期为粒度？
    * semantics of MicroArchState to a instruction-level behaviour on a CFG-like
    * structure.
    */
@@ -133,7 +136,7 @@ public:
    * If this analysis information is neither bottom nor top:
    * Remove those elements from the set of states whose branchAssumptions do not
    * coincide with the given branch outcome at the given branch.
-   */
+   */ // 简单理解为与分支预测相关
   void guard(const MachineInstr *MI, Context *currentCtx, StateDep &anaInfo,
              BranchOutcome bo);
 
@@ -176,7 +179,12 @@ private:
    * The set of microarchitectural states that represents the analysis
    * information at the current program point.
    */
-  typename MicroArchState::StateSet states;
+  typename MicroArchState::StateSet states; 
+  /* 在MAS.h里定义  
+  typedef std::unordered_set<DerivedState,
+                             StateHash<DerivedState, Dependencies>>
+      StateSet;
+  */
   /**
    * We reached a top state. We cannot do any menaingful analysis anymore and
    * will crash on next opportunity. The analysis should try to not reach a top
@@ -301,14 +309,14 @@ void StateExplorationDomainBase<StateExplorationDom, MicroArchState>::transfer(
           << "Micro-architectural analysis currently processes instruction:\n"
           << *MI << "\n");
   typename MicroArchState::StateSet workingSet;
-  workingSet.insert(this->states.begin(), this->states.end());
+  workingSet.insert(this->states.begin(), this->states.end()); // state存的是当前program point状态
   this->states.clear();
   // Cycle until the given instruction is final
   cycleUntilFinal(workingSet, this->states, StaticAddrProvider->getAddr(MI),
                   currentCtx, anaInfo);
 
   // If the program ends, i.e. a state returned to the initial link register,
-  // cycle until the following sync instruction is completed.
+  // cycle until the following sync instruction is completed. // 不是很懂
   if (MI->getParent()->getParent()->getName().str() == AnalysisEntryPoint &&
       MI->getParent()->succ_empty() && MI->isReturn()) {
     assert((MI == (const MachineInstr *)&MI->getParent()->back()) &&
@@ -335,7 +343,7 @@ void StateExplorationDomainBase<StateExplorationDom, MicroArchState>::
     cycleUntilFinal(typename MicroArchState::StateSet &workingSet,
                     typename MicroArchState::StateSet &resultSet,
                     unsigned instrAddress, Context *currentCtx,
-                    StateDep &anaInfo) const {
+                    StateDep &anaInfo) const { // dep是什么玩意？
   assert(!top &&
          "Analysis cannot update top states, it would diverge otherwise");
   // For each state in our set do cycle() updates until isFinal(MI, currentCtx)
@@ -345,14 +353,19 @@ void StateExplorationDomainBase<StateExplorationDom, MicroArchState>::
 
   auto ee = std::make_pair(instrAddress, *currentCtx);
   while (workingSet.size() > 0) {
-    MicroArchState copy(*workingSet.begin());
+    MicroArchState copy(*workingSet.begin()); // 取出一个state
     workingSet.erase(workingSet.begin());
     // If final, then insert it into (output) states
-    if (copy.isFinal(ee)) {
+    if (copy.isFinal(ee)) { // 指定给定指令是否刚刚在当前微体系结构状态下完成执行
+    // 该谓词允许将微体系结构状态映射到正在分析的程序的控制流图中的指令
       StateExplorationDom<MicroArchState>::insertOnInstr(resultSet, copy);
     } else {
       // Else compute successor and add them to the workingset
-      for (auto &succ : copy.cycle(anaInfo)) {
+      for (auto &succ : copy.cycle(anaInfo)) { // 追踪这个cycle是谁实现的是个有意思的问题
+        // MicroArchState 是本模板类的一个模板参数，它是一种类，继承MicroArchitechturalState的类
+        // 搜`: public Micro`就能搜到6种继承类，目前可以先关注InOrderPipelineState，这个是
+        // 从Main从选择MuArchType开始一路传下来的模板参数
+        // 函数返回值是个stateset
         // std::cerr << succ;
         if (succ.isWaitingForJoin()) {
           // if the state recommends to try
@@ -691,13 +704,13 @@ public:
  * re-established after each transfer und join.
  */
 template <class MicroArchState>
-class StateExplorationWithJoinDomain
+class StateExplorationWithJoinDomain // 父类以子类为模板参数
     : public StateExplorationDomainBase<StateExplorationWithJoinDomain,
                                         MicroArchState> {
 private:
   typedef StateExplorationDomainBase<StateExplorationWithJoinDomain,
                                      MicroArchState>
-      Super;
+      Super; // 这super干啥？父类
 
 public:
   /**

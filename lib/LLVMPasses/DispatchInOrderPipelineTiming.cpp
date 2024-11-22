@@ -135,32 +135,33 @@ double getDataCacheMissPenaltyInOrder(double maxdmisses) {
 }
 
 boost::optional<BoundItv>
-dispatchInOrderTimingAnalysis(AddressInformation &addressInfo,
+dispatchInOrderTimingAnalysis(AddressInformation &addressInfo, // 此AddInfo就是原装CV分析得到的
                               unsigned coreNum = 0) {
   std::tuple<AddressInformation &> addrInfoTuple(addressInfo);
 
-  configureCyclingMemories();
+  configureCyclingMemories(); // dispatchMem中,填一些config,这些config分布各处
 
   switch (MemTopType) {
   case MemoryTopologyType::SINGLEMEM: {
-    assert(InstrCachePersType == PersistenceType::NONE &&
+    assert(InstrCachePersType == PersistenceType::NONE && // 存在三种persistence 分析实现
            DataCachePersType == PersistenceType::NONE &&
            "Cannot use Persistence analyses here");
     typedef SingleMemoryTopology<makeOptionsBackgroundMem> MemTop;
     return dispatchTimingAnalysisJoin<InOrderPipelineState<MemTop>>(
         addrInfoTuple, coreNum);
   }
-  case MemoryTopologyType::SEPARATECACHES: {
-    typedef SingleMemoryTopology<makeOptionsBackgroundMem> BgMem;
+  case MemoryTopologyType::SEPARATECACHES: { // currently taken
+    typedef SingleMemoryTopology<makeOptionsBackgroundMem> BgMem; // BackGround指大内存？
     typedef JJYSeparateCachesMemoryTopology<
         CacheFactory::makeOptionsInstrCache, CacheFactory::makeOptionsDataCache,
-        CacheFactory::makeOptionsL2Cache, BgMem>
+        CacheFactory::makeOptionsL2Cache, BgMem> // option什么意思？
         MemTop;
-    auto timebound = dispatchTimingAnalysisJoin<InOrderPipelineState<MemTop>>(
-        addrInfoTuple, coreNum);
-    boost::optional<BoundItv> result = timebound;
+    auto timebound = dispatchTimingAnalysisJoin<InOrderPipelineState<MemTop>>( // 目前主要计算在此
+        addrInfoTuple, coreNum);// timebound什么数据结构？一个上界一个下界，double类型
+    boost::optional<BoundItv> result = timebound; // 这就是函数返回值
     AnalysisResults &ar = AnalysisResults::getInstance();
     boost::optional<BoundItv> icachebound = boost::none;
+    // 这三个if应该暂时没选
     if (CompAnaType.isSet(CompositionalAnalysisType::ICACHE)) {
       icachebound =
           dispatchInOrderCacheAnalysis(AnalysisType::L1ICACHE, addressInfo);

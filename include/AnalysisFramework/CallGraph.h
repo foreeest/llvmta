@@ -159,6 +159,7 @@ private:
    * For each function remember the set of possible callsites,
    * i.e. the points this function could return to.
    */
+  // callsite就是条指令
   std::map<const llvm::MachineFunction *, std::list<const llvm::MachineInstr *>,
            machfunccomp>
       potentialCallSites;

@@ -130,7 +130,7 @@ void TimingAnalysisMain::parseCoreInfo(const std::string &fileName) {
               fileName.c_str());
       exit(1);
     }
-    int64_t core = obj->getInteger("core").getValue();
+    int64_t core = obj->getInteger("core").getValue(); // core号，从0开始计算
 
     json::Array *functions = obj->getArray("tasks");
     if (!functions) {
@@ -141,7 +141,7 @@ void TimingAnalysisMain::parseCoreInfo(const std::string &fileName) {
     for (json::Value &task : *functions) {
       bool has_deadline = false, has_period = false;
       auto taskName = task.getAsObject()->get("function")->getAsString();
-      if (task.getAsObject()->get("deadline")) {
+      if (task.getAsObject()->get("deadline")) { // 这两啥意思？
         has_deadline = true;
       }
       if (task.getAsObject()->get("period")) {
@@ -190,6 +190,7 @@ TimingAnalysisMain::getNextFunction(unsigned int core) {
   return functionName;
 }
 
+/* main函数 */
 bool TimingAnalysisMain::doFinalization(Module &M) {
   // do File parsing
   parseCoreInfo(coreInfo);
@@ -202,20 +203,22 @@ bool TimingAnalysisMain::doFinalization(Module &M) {
     AnaType.addValue(AnalysisType::TIMING);
   }
 
+  // 这两行应该就是个代码运行计时的
   Statistics &Stats = Statistics::getInstance();
   Stats.startMeasurement("Complete Analysis");
 
-  if (CoRunnerSensitive) {
+  if (CoRunnerSensitive) { // 这也是命令行参数
     for (int I = 0; I <= UntilIterationMeasurement; ++I) {
       std::string MeasurementId = "Until Iteration ";
       MeasurementId += std::to_string(I);
-      Stats.startMeasurement(MeasurementId);
+      Stats.startMeasurement(MeasurementId); // 也是个计时
     }
   }
 
-  if (OutputExtFuncAnnotationFile) {
+  if (OutputExtFuncAnnotationFile) { // 外部调用
     Myfile.open("ExtFuncAnnotations.csv", ios_base::trunc);
     CallGraph::getGraph().dumpUnknownExternalFunctions(Myfile);
+    // dump的含义就是输出结果？
     Myfile.close();
     return false;
   }
@@ -235,7 +238,8 @@ bool TimingAnalysisMain::doFinalization(Module &M) {
     Myfile.close();
   }
 
-  VERBOSE_PRINT(" -> Finished Preprocessing Phase\n");
+  VERBOSE_PRINT(" -> Finished Preprocessing Phase\n"); // 这在哪完成运算的？在Pass
+  // 会被调用？
   // Init the output infos
   int64_t task_id = 0;
   // llvm::json::Array arr;
@@ -255,13 +259,13 @@ bool TimingAnalysisMain::doFinalization(Module &M) {
   int ET = 0;
   // char buf[10];
   // memset(buf, 0, sizeof(buf));
-  while (ETchage) {
+  while (ETchage) { // 生命周期迭代
     ET++;
     ETchage = false;
     for (unsigned i = 0; i < CoreNums; ++i) {
-      outs() << "Timing Analysis for core: " << i;
+      outs() << "Timing Analysis for core: " << i; // 输出到终端
       Core = i;
-      for (std::string &functionName : mcif.coreinfo[i]) {
+      for (std::string &functionName : mcif.coreinfo[i]) { // multicore-info
         outs() << " entry point: " << functionName << '\n';
         AnalysisEntryPoint = functionName;
         if (!QuietMode) {
@@ -273,9 +277,9 @@ bool TimingAnalysisMain::doFinalization(Module &M) {
         // Dispatch the value analysis
         auto Arch = getTargetMachine().getTargetTriple().getArch();
         if (Arch == Triple::ArchType::arm) {
-          dispatchValueAnalysis<Triple::ArchType::arm>();
+          dispatchValueAnalysis<Triple::ArchType::arm>(); // 这里就完成
           // pair of 2 u
-          ETchage =
+          ETchage = // 这里应该生命周期变化监测？不是冲突关系变化监测
               ETchage || mcif.updateTaskTime(Core, AnalysisEntryPoint,
                                              this->BCETtime, this->WCETtime);
         } else if (Arch == Triple::ArchType::riscv32) {
@@ -344,14 +348,17 @@ bool TimingAnalysisMain::doFinalization(Module &M) {
   return false;
 }
 
+// 每轮生命周期迭代都要ValueAnalysis吗？
+// 这里包含了一次WCET和一次BCET，感觉这里包含了整个大流程
 template <Triple::ArchType ISA>
 void TimingAnalysisMain::dispatchValueAnalysis() {
   ofstream Myfile;
 
   std::tuple<> NoDep;
   AnalysisDriverInstr<ConstantValueDomain<ISA>> ConstValAna(NoDep);
-  auto CvAnaInfo = ConstValAna.runAnalysis();
-
+  // step1: CV分析
+  auto CvAnaInfo = ConstValAna.runAnalysis(); //MicroArch和ConstantValue的共同接口？
+  // step2: 循环计算
   LoopBoundInfo->computeLoopBoundFromCVDomain(*CvAnaInfo);
 
   if (UseMetaDataAsAnnotation) {
@@ -391,8 +398,8 @@ void TimingAnalysisMain::dispatchValueAnalysis() {
     CvAnaInfo->dump(Myfile);
     Myfile.close();
   }
-
-  AddressInformationImpl<ConstantValueDomain<ISA>> AddrInfo(*CvAnaInfo);
+  
+  AddressInformationImpl<ConstantValueDomain<ISA>> AddrInfo(*CvAnaInfo);// step3： Cv用来获取地址信息
   ::glAddrInfo = &AddrInfo;
 
   if (!QuietMode) {
@@ -404,16 +411,17 @@ void TimingAnalysisMain::dispatchValueAnalysis() {
   VERBOSE_PRINT(" -> Finished Value & Address Analysis\n");
 
   // Set and check the parameters of the instruction and data cache
-  icacheConf.LINE_SIZE = Ilinesize;
+  icacheConf.LINE_SIZE = Ilinesize; // 从命令行赋值到DispatchMemory
   icacheConf.ASSOCIATIVITY = Iassoc;
   icacheConf.N_SETS = Insets;
   icacheConf.LEVEL = 1;
   icacheConf.LATENCY = ILatency;
-  icacheConf.checkParams();
+  icacheConf.checkParams(); // 就检查写策略组合是否合法
 
   dcacheConf.LINE_SIZE = Dlinesize;
   dcacheConf.ASSOCIATIVITY = Dassoc;
   dcacheConf.N_SETS = Dnsets;
+  // data cache才会有这样的策略
   dcacheConf.WRITEBACK = DataCacheWriteBack;
   dcacheConf.WRITEALLOCATE = DataCacheWriteAllocate;
   icacheConf.LATENCY = DLatency;
@@ -427,9 +435,10 @@ void TimingAnalysisMain::dispatchValueAnalysis() {
   l2cacheConf.LATENCY = L2Latency;
   l2cacheConf.LEVEL = 2;
   l2cacheConf.checkParams();
+  // 分别完成一次WCET 和 BCET计算
   // WCET
   // Select the analysis to execute
-  dispatchAnalysisType(AddrInfo);
+  dispatchAnalysisType(AddrInfo); // 这里根据几种分析TYPE分别完成计算
   // Release the call graph instance
   // CallGraph::getGraph().releaseInstance();
 
@@ -467,14 +476,16 @@ void TimingAnalysisMain::dispatchValueAnalysis() {
   PersistenceScopeInfo::deletper();
 }
 
+// 不同分析类型，不同输出，有TIMING CRPD CACHE等类型
 void TimingAnalysisMain::dispatchAnalysisType(AddressInformation &AddressInfo) {
   AnalysisResults &Ar = AnalysisResults::getInstance();
   // Timing & CRPD calculation need normal muarch analysis first
   if (AnaType.isSet(AnalysisType::TIMING) ||
       AnaType.isSet(AnalysisType::CRPD)) {
-    auto Bound = dispatchTimingAnalysis(AddressInfo);
+    auto Bound = dispatchTimingAnalysis(AddressInfo); // 这里应该是主要计算
+    // 包括microArch + PathAnalysis
     Ar.registerResult("total", Bound);
-    if (Bound) {
+    if (Bound) { // 这后面基本上是每个iteration每个函数的W/B的分析完的输出
       if (!isBCET) {
         outs() << std::to_string(Core)
                << "-Core:   " + AnalysisEntryPoint +
@@ -535,7 +546,7 @@ TimingAnalysisMain::dispatchTimingAnalysis(AddressInformation &AddressInfo) {
   //   fprintf(stderr, "You should not come here");
   //   exit(10);
   // }
-  switch (MuArchType) {
+  switch (MuArchType) { // CPU类型，乱序、顺序、PERT等;这几个case的函数都在LLVMPass里实现的
   case MicroArchitecturalType::FIXEDLATENCY:
     assert(MemTopType == MemoryTopologyType::NONE &&
            "Fixed latency has no external memory");
@@ -544,7 +555,7 @@ TimingAnalysisMain::dispatchTimingAnalysis(AddressInformation &AddressInfo) {
     return dispatchPretTimingAnalysis(AddressInfo, Core);
   case MicroArchitecturalType::INORDER:
   case MicroArchitecturalType::STRICTINORDER:
-    return dispatchInOrderTimingAnalysis(AddressInfo, Core);
+    return dispatchInOrderTimingAnalysis(AddressInfo, Core); // 先关注这个
   case MicroArchitecturalType::OUTOFORDER:
     return dispatchOutOfOrderTimingAnalysis(AddressInfo, Core);
   default:

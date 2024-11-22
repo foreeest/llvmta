@@ -212,7 +212,7 @@ inline bool CompositionalAbstractCache<A1, A2>::lessequal(const Self &y) const {
 }
 
 template <class A1, class A2>
-inline void
+inline void // A1可能是CompositionalAbstractCache<Must, May> CacheAna;
 CompositionalAbstractCache<A1, A2>::enterScope(const PersistenceScope &scope) {
   analysis1.enterScope(scope);
   analysis2.enterScope(scope);

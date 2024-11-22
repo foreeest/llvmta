@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+/* 这个类就是维护MSG的 */
 class Multicoreinfo {
 private:
   // CoreNum -> <Earlest Start, Latest Stop>list
@@ -18,7 +19,7 @@ private:
   std::vector<std::vector<std::pair<unsigned, unsigned>>> BWtime;
 
   // CoreNum -> map<function, index>
-  // BTW, this is actually core order (orz)
+  // BTW, this is actually core order (orz) // 6
   std::vector<std::map<std::string, unsigned>> coreOrz;
 
 public:
@@ -128,16 +129,16 @@ public:
   std::vector<std::string> getConflictFunction(unsigned core,
                                                const std::string &function) {
     std::vector<std::string> list;
-    auto liftime = schedule[core][coreOrz[core][function]];
+    auto liftime = schedule[core][coreOrz[core][function]]; // (core, index) -> (ES, LF)
     // if (liftime.first == 0 || liftime.second == 0) {
     //   list.emplace_back("ALL");
     //   return list;
     // }
-    for (int i = 0; i < schedule.size(); i++) {
+    for (int i = 0; i < schedule.size(); i++) { //各个其它核心
       if (i == core) {
         continue;
       }
-      for (int j = 0; j < schedule[i].size(); j++) {
+      for (int j = 0; j < schedule[i].size(); j++) { //的各个task
         auto &tlifetime = schedule[i][j];
         if (tlifetime.second > liftime.first &&
                 tlifetime.second < liftime.second ||

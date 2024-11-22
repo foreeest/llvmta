@@ -41,16 +41,16 @@ namespace TimingAnalysisPass {
 
 template <class MuArchDomain, class Deps>
 AnalysisInformation<PartitioningDomain<MuArchDomain, MachineInstr>,
-                    MachineInstr> *
+                    MachineInstr> * // 好一个模板套模板的返回值, 这玩意是拿去路径分析的
 doMuArchTimingAnalysis(Deps deps, unsigned coreNum = 0) {
   VERBOSE_PRINT(" -> Starting Microarchitectural Analysis:\n"
                 << typeid(MuArchDomain).name() << " on function "
                 << AnalysisEntryPoint << "\n");
-  conflicFunctions = mcif.getConflictFunction(Core, AnalysisEntryPoint);
+  conflicFunctions = mcif.getConflictFunction(Core, AnalysisEntryPoint); // 算完有使用吗？
 
   AnalysisDriverInstrContextMapping<MuArchDomain> microArchAna(deps);
   BOUND = 1;
-  auto microArchAnaInfo = microArchAna.runAnalysis();
+  auto microArchAnaInfo = microArchAna.runAnalysis(); // 分析
   BOUND = 0;
 
   if (!QuietMode) {
@@ -73,14 +73,15 @@ doMuArchTimingAnalysis(Deps deps, unsigned coreNum = 0) {
 template <class MuState, class Deps>
 boost::optional<BoundItv> dispatchTimingAnalysisJoin(Deps deps,
                                                      unsigned coreNum) {
-  if (MuJoinEnabled) {
+  if (MuJoinEnabled) { // 为了效率Enable joining of similar microarchitectural，目前是有的
     typedef StateExplorationWithJoinDomain<MuState> MuArchDomain;
 
     Statistics &stats = Statistics::getInstance();
     // stats.startMeasurement("core_" + std::to_string(coreNum) + " entrypoint_"
     // +
     //                        AnalysisEntryPoint + "_Timing MuArch Analysis");
-    auto res = doMuArchTimingAnalysis<MuArchDomain>(deps, coreNum);
+    auto res = doMuArchTimingAnalysis<MuArchDomain>(deps, coreNum); // 函数还能当模板？
+    // step4： 这应该是实际MicroArch Analysis
     // Res deleted at the end of state graph construction
     // stats.stopMeasurement("core_" + std::to_string(coreNum) + " entrypoint_"
     // +
@@ -98,7 +99,7 @@ boost::optional<BoundItv> dispatchTimingAnalysisJoin(Deps deps,
       //                        AnalysisEntryPoint +
       //                        "_Timing Stategraph Generation");
       currentCore = coreNum;
-      bound = dispatchTimingPathAnalysis<MuArchDomain>(*res);
+      bound = dispatchTimingPathAnalysis<MuArchDomain>(*res); // step5: 路径分析
       // stats.stopMeasurement("core_" + std::to_string(coreNum) + "_" +
       //                       AnalysisEntryPoint + "_Timing Path Analysis");
     }

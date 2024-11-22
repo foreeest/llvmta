@@ -47,7 +47,7 @@ namespace TimingAnalysisPass {
  */
 template <class AnalysisImplementation, typename Granularity,
           class AnalysisDependencies>
-class AnalysisDomain
+class AnalysisDomain // 继承者有CVDomain、CollectingContextsDomain
     : public ContextAwareAnalysisDomain<AnalysisImplementation, Granularity,
                                         AnalysisDependencies> {
 public:

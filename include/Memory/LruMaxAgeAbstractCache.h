@@ -50,13 +50,13 @@ namespace cache {
  * \brief   Implements a must analysis for an LRU cache set.
  * \todo Reimplement with SmallerOf magic as used in FifoMust.
  */
-template <CacheTraits *T>
+template <CacheTraits *T> // T应该是CacheTraits.h吧，封装有cache相连度等信息
 class LruMaxAgeAbstractCache : public progana::JoinSemiLattice {
   typedef LruMaxAgeAbstractCache<T> Self;
 
 protected:
   typedef typename CacheTraits::WayType WayType;
-  typedef typename CacheTraits::TagType TagType;
+  typedef typename CacheTraits::TagType TagType; // 32位无符号整数
   typedef typename CacheTraits::PosType PosType;
 
   /**

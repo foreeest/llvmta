@@ -225,11 +225,12 @@ private:
    * be (re-)run.
    */
   std::map<const MachineBasicBlock *, std::set<Context, ctxcomp>, mbbComp>
-      worklist;
+      worklist; // MBB是llvm中的类，context是token的list
   //改动标记 记录已经分析过执行次数的块
   std::set<const MachineBasicBlock *> mylist;
 };
 
+// 纯虚函数，MicroArchAnalysis会使用；涉及不动点迭代
 template <class AnalysisDom>
 typename AnalysisDriver<AnalysisDom, MachineInstr>::AnalysisInfo *
 AnalysisDriverInstr<AnalysisDom>::runAnalysis() {
@@ -237,11 +238,11 @@ AnalysisDriverInstr<AnalysisDom>::runAnalysis() {
   // Initialize analysis information and worklist
   initialize();
 
-  while (!worklist.empty()) {
+  while (!worklist.empty()) { // worklist在initialize给了初值
     // Get a new work item
     auto &bbCtxs = *(worklist.begin()); // Take reference to entry
-    const auto *currentBB = bbCtxs.first;
-    auto currentCtx = *(bbCtxs.second.begin());
+    const auto *currentBB = bbCtxs.first; // 键: MBB
+    auto currentCtx = *(bbCtxs.second.begin()); // 值: 一个set, 里面是一些ctx
     bbCtxs.second.erase(currentCtx); // Erase from the referenced set
     if (bbCtxs.second.empty()) {
       worklist.erase(currentBB);
@@ -254,30 +255,32 @@ AnalysisDriverInstr<AnalysisDom>::runAnalysis() {
 
     // Compute new incoming information
     // For function entry blocks, we have information available in func2anainfo
-    if (currentBB->getNumber() == 0) { //第一个基本块
+    if (currentBB->getNumber() == 0) { //第一个基本块，这算是context sensitive analysis吗
       assert(currentBB->pred_empty() &&
              "Function entry block cannot have predecessors");
-      const auto *currentFunc = currentBB->getParent();
+      const auto *currentFunc = currentBB->getParent(); // 获取当前基本块的父节点，即包含这个基本块的函数。
       auto toklist = currentCtx.getTokenList();
       // Assert that the topmost token in context at beginning of function is
       // funcallee of this function
+      // 确保当前上下文不为空，并且令牌列表的最后一个令牌类型是 FUNCALLEE
       assert(!currentCtx.isEmpty() &&
              toklist.back()->getType() == PartitionTokenType::FUNCALLEE);
       assert(dynamic_cast<PartitionTokenFunCallee *>(toklist.back())
                  ->getCallee() == currentFunc);
       toklist.pop_back();
-      Context preCallCtx(toklist);
-      AnalysisDom newIn(
+      Context preCallCtx(toklist); // 去掉back之后重新搞一个context
+      AnalysisDom newIn( // 函数入口点分析信息
           func2anainfo->at(currentFunc).in.findAnalysisInfo(preCallCtx));
       // Join (potentially new) incoming information for current basic block and
       // context
-      mbb2anainfo->at(currentBB).addContext(currentCtx, newIn);
+      mbb2anainfo->at(currentBB).addContext(currentCtx, newIn); // 这段有点复杂，就是给前后补ctx
     }
     analyseMachineBasicBlock(currentBB, currentCtx);
   }
   return getAnalysisResults();
 }
 
+// 由上面那个函数调用：初始化除start的地方为BOTTOM
 template <class AnalysisDom>
 void AnalysisDriverInstr<AnalysisDom>::initialize() {
   // Put analysis entry-point into worklist
@@ -311,6 +314,7 @@ void AnalysisDriverInstr<AnalysisDom>::initialize() {
   }
 }
 
+// 由上层runAnalysis调用，重要函数
 template <class AnalysisDom>
 void AnalysisDriverInstr<AnalysisDom>::analyseMachineBasicBlock(
     const MachineBasicBlock *MBB, const Context &ctx) {
@@ -326,10 +330,12 @@ void AnalysisDriverInstr<AnalysisDom>::analyseMachineBasicBlock(
     if (currentInstr.isTransient()) {
       continue; // ... to next instruction
     }
+    // 这里是主要内容，这干了啥？
     analyseInstruction(&currentInstr, targetCtx, newOut);
     handleBranchInstruction(&currentInstr, targetCtx, newOut);
-    //jjy：争用分析地址收集
-    if (CoreNums>0 && BOUND && mylist.count(MBB) == 0) {
+
+    //jjy：争用分析**地址**收集
+    if (CoreNums>0 && BOUND && mylist.count(MBB) == 0) { // mylist是啥？记录已经分析过执行次数的块
       //jjy:这里似乎有问题所以先不管data的访存
       if (currentInstr.mayLoad() || currentInstr.mayStore()) {
         AbstractAddress addrItv =
@@ -339,7 +345,8 @@ void AnalysisDriverInstr<AnalysisDom>::analyseMachineBasicBlock(
                 TimingAnalysisPass::AbstractAddress::getUnknownAddress())) {
           //数组的地址会转换为地址范围
           unsigned lowAligned =
-              addrItv.getAsInterval().lower() & ~(Dlinesize - 1);
+              addrItv.getAsInterval().lower() & ~(Dlinesize - 1); // Datacache的相连度
+              // 若为4则 与 1111 1100
           unsigned upAligned =
               addrItv.getAsInterval().upper() & ~(Dlinesize - 1);
           while (lowAligned <= upAligned) {
@@ -355,12 +362,13 @@ void AnalysisDriverInstr<AnalysisDom>::analyseMachineBasicBlock(
   }
 
   if ( BOUND && mylist.count(MBB) == 0) {
-    if (SPersistenceA &&L2CachePersType == PersistenceType::ELEWISE)
+    if (SPersistenceA &&L2CachePersType == PersistenceType::ELEWISE) // 这是默认值，目前用的
     {
       //jjy：持久性内存块争用分析
-      int time = getbound(MBB, ctx);
+      int time = getbound(MBB, ctx); // loopbound 否则为1
       // int time = 1;
-      mcif.addaddress(AnalysisEntryPoint, addrIlist, time);
+      mcif.addaddress(AnalysisEntryPoint, addrIlist, time); 
+      // 这东西记录某函数某地址cache miss？
     }
     else{
       //jjy：普通争用分析
@@ -371,14 +379,14 @@ void AnalysisDriverInstr<AnalysisDom>::analyseMachineBasicBlock(
     mylist.insert(MBB);
   }
 
-  // Handle fallthrough cases to layout successor
+  // Handle fallthrough cases to layout successor，这整段不是太懂在干啥
   for (auto succit = MBB->succ_begin(); succit != MBB->succ_end(); ++succit) {
-    if (!MBB->isLayoutSuccessor(*succit))
+    if (!MBB->isLayoutSuccessor(*succit)) // 什么叫layout？
       continue;
     // get Target basic block
     MachineBasicBlock *targetMBB = *succit;
 
-    // Handle directive on basicblock edges
+    // Handle directive on basicblock edges，what is directive？
     // Directives when edge is entered
     auto edge = std::make_pair(MBB, targetMBB);
     if (DirectiveHeuristicsPassInstance->hasDirectiveOnEdgeEnter(edge)) {
@@ -390,7 +398,7 @@ void AnalysisDriverInstr<AnalysisDom>::analyseMachineBasicBlock(
     }
     // analysis info needs an "edge transfer" to adjust analysis information
     // for loops
-    targetCtx.transfer(edge);
+    targetCtx.transfer(edge); // 在干啥？
     // Directives when edge is left
     if (DirectiveHeuristicsPassInstance->hasDirectiveOnEdgeLeave(edge)) {
       auto *direclist =
@@ -432,9 +440,10 @@ void AnalysisDriverInstr<AnalysisDom>::analyseInstruction(
 
   // We don't have a call
   if (!currentInstr->isCall()) {
-    // Abstract transfer function
+    // Abstract transfer function，哪个的transfer？是ContextAwareAnalysisDomian的base
+    // StateExplorationDomainBase
     newOut.transfer(currentInstr, &ctx, this->analysisResults);
-  } else {
+  } else { // 处理函数调用的
     auto &cg = CallGraph::getGraph();
 
     AnalysisDom preCallInfo(newOut);
@@ -452,7 +461,7 @@ void AnalysisDriverInstr<AnalysisDom>::analyseInstruction(
       // No need to add something to the worklist
     } else { // Only analyzable calls
       // Set current analysis information to bottom
-      newOut = AnalysisDom(AnaDomInit::BOTTOM);
+      newOut = AnalysisDom(AnaDomInit::BOTTOM); // 何处定义
       // Reduce context for call
       Context reducedCtx(ctx);
       reducedCtx.reduceOnCall();
