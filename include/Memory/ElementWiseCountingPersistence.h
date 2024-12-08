@@ -64,7 +64,7 @@ protected:
    * Map containing conflict set information for specific accessed tags.
    * If the map has no set for a specific tag, than it is empty by default.
    */
-  std::map<TagType, SetWiseCountingPersistence<T>> ele2conflicts;
+  std::map<TagType, SetWiseCountingPersistence<T>> ele2conflicts; // 各tag的冲突集
 
 public:
   using AnaDeps = std::tuple<>;
@@ -124,7 +124,7 @@ UpdateReport *ElementWiseCountingPersistence<T>::update(
   ele2conflicts[tag] =
       SetWiseCountingPersistence<T>(addr.getAsInterval().lower(), false);
   for (auto &e2c : ele2conflicts) {
-    e2c.second.update(addr, load_store, Deps);
+    e2c.second.update(addr, load_store, Deps); // 这个是SetWiseCountingPersistence<T>
   }
   return wantReport ? new UpdateReport : nullptr;
 }
@@ -172,7 +172,7 @@ ElementWiseCountingPersistence<T>::isPersistent(const TagType tag) const {
 template <CacheTraits *T>
 inline bool ElementWiseCountingPersistence<T>::isPersistent(
     const GlobalVariable *var) const {
-  /* We have no idea */
+  /* We have no idea */ // 为啥？
   return false;
 }
 

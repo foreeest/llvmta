@@ -101,7 +101,7 @@ dispatchOutOfOrderTimingAnalysis(AddressInformation &addressInfo, unsigned int c
         CacheFactory::makeOptionsL2Cache, BgMem>
         MemTop;
     auto timebound =
-        dispatchTimingAnalysisJoin<OutOfOrderPipelineState<MemTop>>(
+        dispatchTimingAnalysisJoin<OutOfOrderPipelineState<MemTop>>( // here we are
             addrInfoTuple, coreNum);
 
     boost::optional<BoundItv> result = timebound;

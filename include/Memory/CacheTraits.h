@@ -79,10 +79,10 @@ struct CacheTraits {
 
   static const unsigned ADDRESS_BITS = 32;
   static const unsigned OFFSET_BITS_DECL = 8;
-  static const unsigned WAY_BITS_DECL = 8;
+  static const unsigned WAY_BITS_DECL = 8; // ?
   static const unsigned INDEX_BITS_DECL = 8;
   static const unsigned TAG_BITS = 32;
-  static const unsigned POS_BITS = 8;
+  static const unsigned POS_BITS = 8; // ?
 
   typedef typename boost::uint_t<ADDRESS_BITS>::least AddressType;
   typedef typename boost::uint_t<OFFSET_BITS_DECL>::least OffsetType;

@@ -536,14 +536,15 @@ ConstantValueDomain<Triple::ArchType::arm>::getDataAccessAddress(
   return AbstractAddress::getUnknownAddress();
 }
 
-template <>
+// 500行的函数考虑各种指令，更改reg2const等成员
+template <> 
 void ConstantValueDomain<Triple::ArchType::arm>::transfer(
     const MachineInstr *MI, std::tuple<> &anaInfo) {
   assert(TimingAnalysisMain::getTargetMachine().getTargetTriple().getArch() ==
          Triple::ArchType::arm);
 
   if (this->bot) { // transfer on bot -> gives bot again
-    return;
+    return; // 底状态不更新？不是top？
   }
   // Non-bottom update
   auto MRI = TimingAnalysisMain::getTargetMachine().getMCRegisterInfo();
@@ -1072,7 +1073,7 @@ void ConstantValueDomain<Triple::ArchType::arm>::transfer(
   int PIdx = MI->findFirstPredOperandIdx();
   bool predicated = (PIdx != -1 && MI->getOperand(PIdx).getImm() != ARMCC::AL);
   if (predicated) {
-    this->join(predecessorInfo);
+    this->join(predecessorInfo); // 最开始保存的原状态
   }
 }
 

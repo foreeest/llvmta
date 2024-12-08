@@ -817,9 +817,9 @@ void LoopBoundInfoPass::dump(std::ostream &Mystream) const {
   raw_os_ostream Llvmstream(Mystream);
   Llvmstream << "We found the following loop bounds automatically:\n";
   std::set<std::string> OrderedLoopBoundOutput;
-  for (auto LoopMap : LoopContextMap) {
+  for (auto LoopMap : LoopContextMap) { // 后者是一个map
     auto *Func = LoopMap.first->getHeader()->getParent();
-    for (auto Ctx : LoopMap.second) {
+    for (auto Ctx : LoopMap.second) { // LoopMap的first是MachineLoop，second是set<Context>
       bool p1 = hasUpperLoopBound(LoopMap.first, Ctx);
       bool p2 = hasLowerLoopBound(LoopMap.first, Ctx);
       if (p1 || p2) {

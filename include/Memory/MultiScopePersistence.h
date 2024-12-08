@@ -61,7 +61,7 @@ namespace cache {
  *
  * \brief   Implements a multi-scope wrapper for existing persistence analyses.
  */
-template <class P>
+template <class P> // 实例为ElementWiseCountingPersistence<CacheConfig>
 class MultiScopePersistence : public progana::JoinSemiLattice {
   typedef MultiScopePersistence Self;
 
@@ -83,7 +83,7 @@ public:
                        AnaDeps *, bool wantReport = false,
                        const Classification assumption = CL_UNKNOWN);
   UpdateReport *potentialUpdate(AbstractAddress addr, AccessType load_store,
-                                bool wantReport = false);
+                                bool wantReport = false); // gpt：模拟对未知缓存元素的访问，增加所有元素的年龄。
   void join(const Self &y);
   bool lessequal(const Self &y) const;
   void enterScope(const PersistenceScope &scope);
@@ -111,7 +111,7 @@ inline MultiScopePersistence<P>::MultiScopePersistence(
 
 ///\see dom::cache::CacheSetAnalysis<P>::classify(const TagType tag) const
 template <class P>
-Classification
+Classification // 另有分类之处？isPersistent
 MultiScopePersistence<P>::classify(const AbstractAddress addr) const {
   return CL_UNKNOWN; // cannot help here
 }
@@ -198,10 +198,11 @@ inline bool MultiScopePersistence<P>::lessequal(const Self &y) const {
 
 template <class P>
 void MultiScopePersistence<P>::enterScope(const PersistenceScope &scope) {
-#ifdef STRICT_SCOPE_CONSISTENCY
+#ifdef STRICT_SCOPE_CONSISTENCY // 目前没定义
   assert(scopes2info.count(scope) == 0 && "Entered scope twice");
   scopes2info.insert(std::make_pair(scope, P()));
 #else
+ // 改了维护的两成员，有什么用
   if (scopes2info.count(scope) == 0) {
     scopes2info.insert(std::make_pair(scope, P(false)));
     scopes2entercount.insert(std::make_pair(scope, 1));
@@ -231,7 +232,7 @@ std::set<PersistenceScope>
 MultiScopePersistence<P>::getPersistentScopes(const TagType tag) const {
   std::set<PersistenceScope> result;
   for (auto &scope2pers : this->scopes2info) {
-    if (scope2pers.second.isPersistent(tag)) {
+    if (scope2pers.second.isPersistent(tag)) { // define in elewise
       result.insert(scope2pers.first);
     }
   }

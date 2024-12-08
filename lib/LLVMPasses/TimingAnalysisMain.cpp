@@ -238,8 +238,7 @@ bool TimingAnalysisMain::doFinalization(Module &M) {
     Myfile.close();
   }
 
-  VERBOSE_PRINT(" -> Finished Preprocessing Phase\n"); // 这在哪完成运算的？在Pass
-  // 会被调用？
+  VERBOSE_PRINT(" -> Finished Preprocessing Phase\n"); // 这在哪完成运算的？在Pass，这应该已经算完了
   // Init the output infos
   int64_t task_id = 0;
   // llvm::json::Array arr;
@@ -253,18 +252,21 @@ bool TimingAnalysisMain::doFinalization(Module &M) {
   // auto &output_data = manager.insert(
   //     "Summary", StatisticOutput("Summary", "Function Name", COL_LEN));
 
+  // CSLTODO进行UR和CEOP的获取
+
   StatisticOutput output_data =
       StatisticOutput("Summary", "Function Name", COL_LEN);
   bool ETchage = true;
   int ET = 0;
   // char buf[10];
   // memset(buf, 0, sizeof(buf));
+  // CSLTODO这个改成一次单核分析，多次WCEET分析
   while (ETchage) { // 生命周期迭代
     ET++;
     ETchage = false;
     for (unsigned i = 0; i < CoreNums; ++i) {
       outs() << "Timing Analysis for core: " << i; // 输出到终端
-      Core = i;
+      Core = i; // 全局变量，控制当前分析的哪个单核
       for (std::string &functionName : mcif.coreinfo[i]) { // multicore-info
         outs() << " entry point: " << functionName << '\n';
         AnalysisEntryPoint = functionName;
@@ -277,11 +279,12 @@ bool TimingAnalysisMain::doFinalization(Module &M) {
         // Dispatch the value analysis
         auto Arch = getTargetMachine().getTargetTriple().getArch();
         if (Arch == Triple::ArchType::arm) {
-          dispatchValueAnalysis<Triple::ArchType::arm>(); // 这里就完成
+          dispatchValueAnalysis<Triple::ArchType::arm>(); // 这里就完成单核分析
           // pair of 2 u
-          ETchage = // 这里应该生命周期变化监测？不是冲突关系变化监测
+          ETchage = 
               ETchage || mcif.updateTaskTime(Core, AnalysisEntryPoint,
-                                             this->BCETtime, this->WCETtime);
+                                             this->BCETtime, this->WCETtime); // B\W是全局
+              // 所以说目前一轮n核，每个核算完一次，冲突集都可能变化，而非轮内冲突集不变
         } else if (Arch == Triple::ArchType::riscv32) {
           dispatchValueAnalysis<Triple::ArchType::riscv32>();
           ETchage =
@@ -317,10 +320,12 @@ bool TimingAnalysisMain::doFinalization(Module &M) {
         output_data.update(functionName, "I-MISS", IMISS);
         output_data.update(functionName, "D-MISS", DMISS);
         output_data.update(functionName, "L2-MISS", L2MISS);
-        IMISS = 0, DMISS = 0, L2MISS = 0;
+        IMISS = 0, DMISS = 0, L2MISS = 0; // 全局变量
       }
       outs() << " No next analyse point for this core.\n";
     }
+    // CSLTODO完成了一轮对每个单核的分析，可以进行多核WCEET计算
+
     outs() << "---------------------------------The " << ET
            << " iteration is over----------------------------------\n";
     // std::ofstream myfile;
@@ -358,6 +363,7 @@ void TimingAnalysisMain::dispatchValueAnalysis() {
   AnalysisDriverInstr<ConstantValueDomain<ISA>> ConstValAna(NoDep);
   // step1: CV分析
   auto CvAnaInfo = ConstValAna.runAnalysis(); //MicroArch和ConstantValue的共同接口？
+  // No，MuArch的类是CV的那个类的子类
   // step2: 循环计算
   LoopBoundInfo->computeLoopBoundFromCVDomain(*CvAnaInfo);
 
@@ -556,7 +562,7 @@ TimingAnalysisMain::dispatchTimingAnalysis(AddressInformation &AddressInfo) {
   case MicroArchitecturalType::INORDER:
   case MicroArchitecturalType::STRICTINORDER:
     return dispatchInOrderTimingAnalysis(AddressInfo, Core); // 先关注这个
-  case MicroArchitecturalType::OUTOFORDER:
+  case MicroArchitecturalType::OUTOFORDER: // 我们在此
     return dispatchOutOfOrderTimingAnalysis(AddressInfo, Core);
   default:
     errs() << "No known microarchitecture chosen.\n";

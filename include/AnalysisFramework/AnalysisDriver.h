@@ -69,6 +69,7 @@ namespace TimingAnalysisPass {
  * driver is responsible for providing access to this depend information during
  * the analysis. The analysis is in general interprocedurally.
  */
+// 12.7复现张伟的UR部分全文通读
 template <class AnalysisDom, typename Granularity> class AnalysisDriver {
 
   /**
@@ -141,7 +142,7 @@ public:
   /**
    * Constructor, calls the superclass constructor
    */
-  AnalysisDriverInstr(AnaDeps anaDeps)
+  AnalysisDriverInstr(AnaDeps anaDeps) // CV传进来这个参数std::tuple<> NoDep;
       : AnalysisDriver<AnalysisDom, MachineInstr>(anaDeps),
         mbb2anainfo(new BB2AnaInfoType()), func2anainfo(new Func2AnaInfoType()),
         worklist() {}
@@ -152,6 +153,7 @@ public:
 private:
   /// Typedef to shorten type name
   typedef PartitioningDomain<AnalysisDom, MachineInstr> PartitionedAnalysisDom;
+  // 让gpt读了此类，大概是维护一个context树
   /// Typedef: analysis information at entry and exit of a basic block
   typedef InfoInOut<PartitionedAnalysisDom> AnaInfoEntryExit;
   /// Typedef, local map type to store analysis information per basic block
@@ -159,10 +161,10 @@ private:
   typedef std::map<const MachineBasicBlock *, PartitionedAnalysisDom>
       BB2AnaInfoType;
   /// Map each basic block entry to analysis information
-  std::unique_ptr<BB2AnaInfoType> mbb2anainfo;
+  std::unique_ptr<BB2AnaInfoType> mbb2anainfo; // 只有一个对象
   /// Typedef, local map type to store analysis information per function
   typedef std::map<const MachineFunction *, AnaInfoEntryExit> Func2AnaInfoType;
-  std::unique_ptr<Func2AnaInfoType> func2anainfo;
+  std::unique_ptr<Func2AnaInfoType> func2anainfo; // 函数出入口信息吧？还没细看InfoInOut是什么
 
   /**
    * Initialize the analysis information maps by putting bottoms everywhere.
@@ -218,7 +220,7 @@ private:
    * Returns the AnaInfo object containing the information this analysis has
    * computed.
    */
-  AnalysisInfo *getAnalysisResults();
+  AnalysisInfo *getAnalysisResults(); // runAnalysis结尾调用并返回这个函数的返回值
 
   /**
    * The worklist contains basicblocks and context for which the analysis has to
@@ -230,7 +232,8 @@ private:
   std::set<const MachineBasicBlock *> mylist;
 };
 
-// 纯虚函数，MicroArchAnalysis会使用；涉及不动点迭代
+// 纯虚函数，MicroArchAnalysis会使用；涉及不动点迭代；CV分析也调用，调用点在Main
+// 但这样会使地址多收集一次吗？不会，在analysMBB那里收集过就不收集了
 template <class AnalysisDom>
 typename AnalysisDriver<AnalysisDom, MachineInstr>::AnalysisInfo *
 AnalysisDriverInstr<AnalysisDom>::runAnalysis() {
@@ -243,7 +246,7 @@ AnalysisDriverInstr<AnalysisDom>::runAnalysis() {
     auto &bbCtxs = *(worklist.begin()); // Take reference to entry
     const auto *currentBB = bbCtxs.first; // 键: MBB
     auto currentCtx = *(bbCtxs.second.begin()); // 值: 一个set, 里面是一些ctx
-    bbCtxs.second.erase(currentCtx); // Erase from the referenced set
+    bbCtxs.second.erase(currentCtx); // Erase from the referenced set, 只取一个Context
     if (bbCtxs.second.empty()) {
       worklist.erase(currentBB);
     }
@@ -255,7 +258,8 @@ AnalysisDriverInstr<AnalysisDom>::runAnalysis() {
 
     // Compute new incoming information
     // For function entry blocks, we have information available in func2anainfo
-    if (currentBB->getNumber() == 0) { //第一个基本块，这算是context sensitive analysis吗
+    // Number是函数内唯一标识
+    if (currentBB->getNumber() == 0) { // 第一个基本块，这算是context sensitive analysis吗
       assert(currentBB->pred_empty() &&
              "Function entry block cannot have predecessors");
       const auto *currentFunc = currentBB->getParent(); // 获取当前基本块的父节点，即包含这个基本块的函数。
@@ -263,17 +267,20 @@ AnalysisDriverInstr<AnalysisDom>::runAnalysis() {
       // Assert that the topmost token in context at beginning of function is
       // funcallee of this function
       // 确保当前上下文不为空，并且令牌列表的最后一个令牌类型是 FUNCALLEE
-      assert(!currentCtx.isEmpty() &&
-             toklist.back()->getType() == PartitionTokenType::FUNCALLEE);
+      assert(!currentCtx.isEmpty() && // 不空就是有TokenList
+             toklist.back()->getType() == PartitionTokenType::FUNCALLEE); // back感觉可以理解为栈
       assert(dynamic_cast<PartitionTokenFunCallee *>(toklist.back())
-                 ->getCallee() == currentFunc);
+                 ->getCallee() == currentFunc); // 反正就是说上一个Token是本函数被调用了
       toklist.pop_back();
       Context preCallCtx(toklist); // 去掉back之后重新搞一个context
       AnalysisDom newIn( // 函数入口点分析信息
           func2anainfo->at(currentFunc).in.findAnalysisInfo(preCallCtx));
+          // 这个at解析出来一个typedef InfoInOut<PartitionedAnalysisDom> AnaInfoEntryExit;
+
       // Join (potentially new) incoming information for current basic block and
       // context
       mbb2anainfo->at(currentBB).addContext(currentCtx, newIn); // 这段有点复杂，就是给前后补ctx
+      // 对一个PartitioningDomain addContext
     }
     analyseMachineBasicBlock(currentBB, currentCtx);
   }
@@ -285,7 +292,7 @@ template <class AnalysisDom>
 void AnalysisDriverInstr<AnalysisDom>::initialize() {
   // Put analysis entry-point into worklist
   assert(worklist.empty());
-  auto MF = machineFunctionCollector->getFunctionByName(AnalysisEntryPoint);
+  auto MF = machineFunctionCollector->getFunctionByName(AnalysisEntryPoint); // 默认是main
   const MachineBasicBlock *analysisStart = &*(MF->begin());
   Context initialCtx;
   // Directive handling on function called
@@ -303,7 +310,7 @@ void AnalysisDriverInstr<AnalysisDom>::initialize() {
           make_pair(&currBB, PartitionedAnalysisDom(AnaDomInit::BOTTOM)));
     }
     // Function are in general unreachable at entry and exit
-    AnaInfoEntryExit tmp((PartitionedAnalysisDom(AnaDomInit::BOTTOM)),
+    AnaInfoEntryExit tmp((PartitionedAnalysisDom(AnaDomInit::BOTTOM)), // Bottom空集、top全集
                          PartitionedAnalysisDom(AnaDomInit::BOTTOM));
     // If this is the (reachable) analysis entry point, use START analysis
     // information instead
@@ -323,11 +330,15 @@ void AnalysisDriverInstr<AnalysisDom>::analyseMachineBasicBlock(
 
   // Clone input to get new output
   AnalysisDom newOut(mbb2anainfo->at(MBB).findAnalysisInfo(ctx));
+  // CVDomain提供AbstractAddress getDataAccessAddress(const MachineInstr *MI,
+  //                                     unsigned pos) const;等函数
+  // 提供std::map<unsigned, int> reg2const; 和 std::map<Address, int> addr2const;
+  // 这句代码可以理解为用一个MBB和一个ctx索引一个分析域
   Context targetCtx(ctx);
   // For each instruction, call corresponding transfer function
   for (auto &currentInstr : *MBB) {
     // If effect-less instruction found, we should ignore it during analysis
-    if (currentInstr.isTransient()) {
+    if (currentInstr.isTransient()) { // 瞬态，让我想到了随机过程
       continue; // ... to next instruction
     }
     // 这里是主要内容，这干了啥？
@@ -340,12 +351,14 @@ void AnalysisDriverInstr<AnalysisDom>::analyseMachineBasicBlock(
       if (currentInstr.mayLoad() || currentInstr.mayStore()) {
         AbstractAddress addrItv =
             glAddrInfo->getDataAccessAddress(&currentInstr, &targetCtx, 0);
+            // CV分析不就是获取地址的，这就已经能拿到地址了？难道是analyseInstr做完了？
         //未知的地址不管
         if (!addrItv.isSameInterval(
                 TimingAnalysisPass::AbstractAddress::getUnknownAddress())) {
           //数组的地址会转换为地址范围
           unsigned lowAligned =
-              addrItv.getAsInterval().lower() & ~(Dlinesize - 1); // Datacache的相连度
+              addrItv.getAsInterval().lower() & ~(Dlinesize - 1); // Datacache的相连度个屁
+              // 就是offset，因为index和tag就够了，确认cache映射到哪个set，无需offset
               // 若为4则 与 1111 1100
           unsigned upAligned =
               addrItv.getAsInterval().upper() & ~(Dlinesize - 1);
@@ -361,6 +374,7 @@ void AnalysisDriverInstr<AnalysisDom>::analyseMachineBasicBlock(
     }
   }
 
+  // 这段在收集多核分析的东西
   if ( BOUND && mylist.count(MBB) == 0) {
     if (SPersistenceA &&L2CachePersType == PersistenceType::ELEWISE) // 这是默认值，目前用的
     {
@@ -373,15 +387,16 @@ void AnalysisDriverInstr<AnalysisDom>::analyseMachineBasicBlock(
     else{
       //jjy：普通争用分析
       for(auto&al:addrIlist){
-        mcif.addaddress(AnalysisEntryPoint,al);
+        mcif.addaddress(AnalysisEntryPoint,al); // 为啥要是AnalysisEntryPoint？
+        // AnalysisEntryPoint就是分析函数名？
       }
     }
-    mylist.insert(MBB);
+    mylist.insert(MBB); // 上面已经收集完一个MBB里全部指令的访存和指令cache，所以标记为已取
   }
 
   // Handle fallthrough cases to layout successor，这整段不是太懂在干啥
   for (auto succit = MBB->succ_begin(); succit != MBB->succ_end(); ++succit) {
-    if (!MBB->isLayoutSuccessor(*succit)) // 什么叫layout？
+    if (!MBB->isLayoutSuccessor(*succit)) // 什么叫layout？自己指向自己？
       continue;
     // get Target basic block
     MachineBasicBlock *targetMBB = *succit;
@@ -389,6 +404,7 @@ void AnalysisDriverInstr<AnalysisDom>::analyseMachineBasicBlock(
     // Handle directive on basicblock edges，what is directive？
     // Directives when edge is entered
     auto edge = std::make_pair(MBB, targetMBB);
+    // 一个enter一个leave
     if (DirectiveHeuristicsPassInstance->hasDirectiveOnEdgeEnter(edge)) {
       auto *direclist =
           DirectiveHeuristicsPassInstance->getDirectiveOnEdgeEnter(edge);
@@ -409,7 +425,7 @@ void AnalysisDriverInstr<AnalysisDom>::analyseMachineBasicBlock(
     }
     newOut.enterBasicBlock(targetMBB);
     // Join incoming information, and check whether the join changed something
-    auto &targetMBBAnaInfo = mbb2anainfo->at(targetMBB);
+    auto &targetMBBAnaInfo = mbb2anainfo->at(targetMBB); // PartitioningDomain
     bool changed = targetMBBAnaInfo.addContext(targetCtx, newOut); // ？????
     // Add potential affected contexts to worklist
     if (changed) {
@@ -442,7 +458,8 @@ void AnalysisDriverInstr<AnalysisDom>::analyseInstruction(
   if (!currentInstr->isCall()) {
     // Abstract transfer function，哪个的transfer？是ContextAwareAnalysisDomian的base
     // StateExplorationDomainBase
-    newOut.transfer(currentInstr, &ctx, this->analysisResults);
+    newOut.transfer(currentInstr, &ctx, this->analysisResults); // takes the next instruction to analyze
+    // 主要功能函数
   } else { // 处理函数调用的
     auto &cg = CallGraph::getGraph();
 
@@ -480,7 +497,7 @@ void AnalysisDriverInstr<AnalysisDom>::analyseInstruction(
                "The first basic block of a function should have number 0");
         toCalleeInfo.enterBasicBlock(calleeBeginBB);
         bool calleechanged =
-            func2anainfo->at(callee).in.addContext(reducedCtx, toCalleeInfo);
+            func2anainfo->at(callee).in.addContext(reducedCtx, toCalleeInfo); // 改这个数据结构
         // Potentially add first BB of callee to worklist
         if (calleechanged) {
           // Directive handling on function called

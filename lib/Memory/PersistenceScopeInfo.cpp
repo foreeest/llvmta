@@ -177,7 +177,7 @@ void PersistenceScopeInfo::dump(std::ostream &mystream) const {
   // Output the scopes
   llvmstream << "Starting Scopes:\n";
   for (auto &edge2scopes : startScope) {
-    for (auto &sc : edge2scopes.second) {
+    for (auto &sc : edge2scopes.second) { // sc是PersistenceScope
       llvmstream << "We start scope " << sc << " at (BB"
                  << edge2scopes.first.first->getNumber() << ", BB"
                  << edge2scopes.first.second->getNumber() << ")\n";

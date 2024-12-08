@@ -60,7 +60,7 @@ void Context::update(const Directive *direc) {
     for (auto token : direc->getPartitionTokens()) {
       switch (token->getType()) {
       case PartitionTokenType::LOOPPEEL: {
-        auto tokenPeel = dynamic_cast<PartitionTokenLoopPeel *>(token.get());
+        auto tokenPeel = dynamic_cast<PartitionTokenLoopPeel *>(token.get()); // 计数回边
         // We want to peel the loop, then the updated context has peel iteration
         // 0 on top
         if (tokenPeel->backedgeTakenCount() == 0) {//   如果不是0就已经执行一次了，在环外的最多只能执行一次
@@ -72,7 +72,7 @@ void Context::update(const Directive *direc) {
         break;
       }
       case PartitionTokenType::LOOPITER: {
-        auto tokenIter = dynamic_cast<PartitionTokenLoopIter *>(token.get());
+        auto tokenIter = dynamic_cast<PartitionTokenLoopIter *>(token.get()); // 计数回边至少次数
         // We want to consider cumulative contexts for >= 0 taken backedges, put
         // this on top
         if (tokenIter->backedgeLeastTakenCount() == 0) {
@@ -102,7 +102,7 @@ void Context::update(const Directive *direc) {
            "We found a merge directive for an empty context");
     // Our topmost token should get merged
     auto labelsToMerge = direc->getPartitionTokens();
-    for (auto &label : labelsToMerge) {
+    for (auto &label : labelsToMerge) { // label is PartitionToken
       if (label.get() == toklist.back()) {
         toklist.pop_back();
         this->context = contextStorage.insert(toklist);

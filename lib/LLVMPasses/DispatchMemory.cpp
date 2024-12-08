@@ -47,7 +47,7 @@
 #include "Util/Options.h"
 
 namespace TimingAnalysisPass {
-
+// 这里实现cache Factory返回Cache的分析类型，也负责实现Mem的类型返回
 using namespace dom::cache;
 
 CacheTraits icacheConf(64, 3, 256, false, false);
@@ -87,6 +87,7 @@ inline AbstractCache *makePersistenceCache(PersistenceType persType,
     }
     typedef CompositionalAbstractCache<CacheAna, ElePersis> Analysis;
     return new AbstractCacheImpl<CacheConfig, Analysis>(assumeEmptyCache);
+    // 展开得 AbstractCacheImpl<CacheTraits, CompositionalAbstractCache<CompositionalAbstractCache<Must, May>, MultiScopePersistence<ElementWiseCountingPersistence<CacheConfig>>>>
   }
   case PersistenceType::CONDMUST: {
     if (ArrayPersistenceAnalysis == ArrayPersistenceAnaType::SETWISE) {
@@ -113,10 +114,10 @@ inline AbstractCache *makeDirtinessCache(PersistenceType persType,
   }
 
   typedef CompositionalAbstractCache<Must, May> CacheAna;
-  return makePersistenceCache<CacheConfig, CacheAna>(persType,
+  return makePersistenceCache<CacheConfig, CacheAna>(persType, // config都是同一个traits
                                                      assumeEmptyCache);
 }
-template <CacheTraits *CacheConfig>
+template <CacheTraits *CacheConfig> // 实例eg，本code开头：CacheTraits icacheConf(64, 3, 256, false, false);
 inline AbstractCache *
 makeOptionsCache(CacheReplPolicyType replpol, PersistenceType persType,
                  bool assumeEmptyCache, bool compositional,
@@ -134,13 +135,13 @@ makeOptionsCache(CacheReplPolicyType replpol, PersistenceType persType,
   assert(replpol == CacheReplPolicyType::LRU &&
          "We do not support FIFO yet"); // TODO support FIFO caches
 
-  if (arrayAwareMust) { // 找它真假，150行左右写了false
+  if (arrayAwareMust) { // 找它真假，150行左右写了false，这是什么意思？
     assert(ArrayAnalysis);
     return makeDirtinessCache<CacheConfig,
                               LruMaxAgeArrayAwareCache<CacheConfig>>(
         persType, assumeEmptyCache);
   }
-
+  // taken
   return makeDirtinessCache<CacheConfig, LruMaxAgeAbstractCache<CacheConfig>>(
       persType, assumeEmptyCache);
 }
@@ -270,7 +271,7 @@ template <typename MemoryType> AbstractCyclingMemory *dispatchSharedBus() {
 
 AbstractCyclingMemory *makeOptionsBackgroundMem() {
   switch (BackgroundMemoryType) {
-  case BgMemType::SRAM: {
+  case BgMemType::SRAM: { // currently taken
     return dispatchSharedBus<
         FixedLatencyCyclingMemory<&fixedLatencyCyclingMemoryConfig>>();
   }

@@ -63,7 +63,8 @@ protected:
   typedef typename CacheTraits::PosType PosType;
 
   /* Struct describing a memory block. Among blocks of the same cache
-   * set it is uniquely identified by its tag.
+   * set it is uniquely identified by its tag. 相同SET内TAG可以唯一标识一个块
+   问题是这个类表示的是一个SET？ No，一个ElementWise已经对应到一个cache set了
    * As an optimization, each block also contains the arrays it is
    * a member of. If arrays do not overlap these should be two at most.
    * Knowledge of the surrounding arrays is required for the array-aware
@@ -234,11 +235,11 @@ UpdateReport *SetWiseCountingPersistence<T>::update(
   }
 
   bool inserted;
-  std::tie(std::ignore, inserted) = accessedBlocks.insert(Block(addr));
+  std::tie(std::ignore, inserted) = accessedBlocks.insert(Block(addr)); // 冲突集
 
   if (inserted) {
     if (accessedBlocks.size() + accessedArrays.size() > ASSOCIATIVITY) {
-      this->gotoTop();
+      this->gotoTop(); // 大于相连度就不再persistence了
     }
   }
   return wantReport ? new UpdateReport : nullptr;
@@ -293,7 +294,8 @@ template <CacheTraits *T>
 inline bool
 SetWiseCountingPersistence<T>::isPersistent(const TagType tag) const {
   // jjy: 我们考虑除了层一cache其他都是共享cache
-  if (SPersistenceA && CoreNums > 0 && T->LEVEL > 1) {
+  if (SPersistenceA && CoreNums > 0 && T->LEVEL > 1) { // L1的persistence呢？
+    // shared-cache-Persistence-Analysis currently False
     unsigned index = getindex<T>(r);
     if (top) {
       return false;
@@ -304,7 +306,7 @@ SetWiseCountingPersistence<T>::isPersistent(const TagType tag) const {
         if (getindex<T>(address) == index && getTag<T>(address) != tag) {
           unsigned i = 1;
           for (const Block &B : accessedBlocks) {
-            if (getTag<T>(address) == B.tag) {
+            if (getTag<T>(address) == B.tag) { // 已经在cache里了
               i = 0;
               break;
             }
@@ -332,7 +334,7 @@ SetWiseCountingPersistence<T>::isPersistent(const TagType tag) const {
 template <CacheTraits *T>
 inline bool
 SetWiseCountingPersistence<T>::isPersistent(const GlobalVariable *var) const {
-  return !top;
+  return !top; // 啥
 }
 
 ///\see dom::cache::CacheSetAnalysis<T>::operator==(const Self& y) const

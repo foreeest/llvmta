@@ -46,7 +46,8 @@ doMuArchTimingAnalysis(Deps deps, unsigned coreNum = 0) {
   VERBOSE_PRINT(" -> Starting Microarchitectural Analysis:\n"
                 << typeid(MuArchDomain).name() << " on function "
                 << AnalysisEntryPoint << "\n");
-  conflicFunctions = mcif.getConflictFunction(Core, AnalysisEntryPoint); // 算完有使用吗？
+  conflicFunctions = mcif.getConflictFunction(Core, AnalysisEntryPoint); // ret是全局变量
+  // 在cache部分引用
 
   AnalysisDriverInstrContextMapping<MuArchDomain> microArchAna(deps);
   BOUND = 1;

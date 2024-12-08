@@ -43,7 +43,7 @@
 using namespace llvm;
 
 namespace TimingAnalysisPass {
-
+// 这个应该大致是符合论文的interface1的
 /**
  * Class implementing constant-value analysis for registers.
  * Either this information is unreachable (bot) or for each register a constant
@@ -124,7 +124,8 @@ private:
   /**
    * Simple tracking of which location hold memory access symbols (e.g. global
    * variables).
-   */
+   */ 
+  // 符号信息（如全局变量或函数参数），辅助进行符号化分析。
   std::map<unsigned, const MemoryAccessSymbol *> reg2symbol;
   std::map<Address, const MemoryAccessSymbol *> addr2symbol;
   std::map<std::string, const MemoryAccessSymbol *> fnparam2symbol;

@@ -151,10 +151,10 @@ dispatchInOrderTimingAnalysis(AddressInformation &addressInfo, // 此AddInfo就�
         addrInfoTuple, coreNum);
   }
   case MemoryTopologyType::SEPARATECACHES: { // currently taken
-    typedef SingleMemoryTopology<makeOptionsBackgroundMem> BgMem; // BackGround指大内存？
+    typedef SingleMemoryTopology<makeOptionsBackgroundMem> BgMem; // BackGround指大内存？对
     typedef JJYSeparateCachesMemoryTopology<
         CacheFactory::makeOptionsInstrCache, CacheFactory::makeOptionsDataCache,
-        CacheFactory::makeOptionsL2Cache, BgMem> // option什么意思？
+        CacheFactory::makeOptionsL2Cache, BgMem> // option什么意思？ 见CacheFactory
         MemTop;
     auto timebound = dispatchTimingAnalysisJoin<InOrderPipelineState<MemTop>>( // 目前主要计算在此
         addrInfoTuple, coreNum);// timebound什么数据结构？一个上界一个下界，double类型

@@ -47,10 +47,16 @@ using namespace dom::cache;
  * instruction and data cache, plus a background memory for cache misses. The
  * background memory has to be another memory topology.
  */
+/* 一个Inorder的实例
+typedef JJYSeparateCachesMemoryTopology<
+    CacheFactory::makeOptionsInstrCache, CacheFactory::makeOptionsDataCache,
+    CacheFactory::makeOptionsL2Cache, BgMem> // option什么意思？见cache factory
+    MemTop;
+*/
 template <AbstractCache *(*makeInstrCache)(bool),
           AbstractCache *(*makeDataCache)(bool),
           AbstractCache *(*makeL2Cache)(bool), class BgMem>
-class JJYSeparateCachesMemoryTopology
+class JJYSeparateCachesMemoryTopology // 这个类的父类的模板参数有自己的子类
     : public MemoryTopologyInterface<JJYSeparateCachesMemoryTopology<
           makeInstrCache, makeDataCache, makeL2Cache, BgMem>> {
 public:
@@ -287,7 +293,7 @@ public:
 private:
   typedef MemoryTopologyInterface<JJYSeparateCachesMemoryTopology> Super;
 
-  typedef typename Super::Access Access;
+  typedef typename Super::Access Access; // MTInterface.h ~50
 
   /**
    * Increments the current id.
@@ -356,7 +362,7 @@ private:
     /// Blocking counter to wait until a cache access is finished.
     unsigned l1timeBlocked, l2timeBlocked;
     /// Classification of this access by the cache
-    Classification cl;
+    Classification cl; // hit miss top bottom，祖父是CompleteLattice
 
     // Constructor
     OngoingAccess(Access acc)
@@ -505,7 +511,7 @@ template <AbstractCache *(*makeInstrCache)(bool),
 JJYSeparateCachesMemoryTopology<makeInstrCache, makeDataCache, makeL2Cache,
                                 BgMem>::JJYSeparateCachesMemoryTopology()
     : memory(BgMem()), currentId(1),
-      instructionComponent(makeInstrCache(false)),
+      instructionComponent(makeInstrCache(false)), // 所以这是来自Cache Factory的AbCacheImpl
       dataComponent(makeDataCache(false)), L2Component(makeL2Cache(false)),
       justEntered(boost::none) {}
 
@@ -549,9 +555,10 @@ JJYSeparateCachesMemoryTopology<makeInstrCache, makeDataCache, makeL2Cache,
     instructionComponent.waitingQueue.pop_front();
   }
   unsigned resId = currentId;
-  instructionComponent.waitingQueue.push_back(
+  instructionComponent.waitingQueue.push_back( // std::list<Access>
       Access(resId, AbstractAddress(addr), AccessType::LOAD, numWords));
-  incrementCurrentId();
+  incrementCurrentId(); // 类中维护当前访问的唯一指令的变量
+  // 奇怪那这样在哪access？何处消费这个queue？可能是 mystartInstructionAccess
   return boost::optional<unsigned>(resId);
 }
 
@@ -676,12 +683,14 @@ JJYSeparateCachesMemoryTopology<makeInstrCache, makeDataCache, makeL2Cache,
   // We delete scope entering
   succ.justEntered = boost::none;
 
+  /* 上边清掉了之前的记录，下面用五层循环来探索所有后继可能 */
   // If starting instruction accesses is feasible, do it
-  for (auto &startinstrTopology : succ.mystartInstructionAccess()) {
+  for (auto &startinstrTopology : succ.mystartInstructionAccess()) { // important
+    // 返回值是list<JJYCMT>
     for (auto &startdataTopology : startinstrTopology.mystartDataAccess()) {
-      // Cycle background memory
-      for (auto &memory :
-           startdataTopology.memory.cycle(potentialDataMissesPending)) { // 又是谁的cycle？
+      // Cycle background memory ; 返回值也是list<JJYCMT>
+      for (auto &memory : // JJYCMT.memory定义的是BackGround
+           startdataTopology.memory.cycle(potentialDataMissesPending)) { // singleMemTopology ~370
         JJYSeparateCachesMemoryTopology afterbgmemcycle(startdataTopology);
         afterbgmemcycle.memory = memory; // memorytopology
 
@@ -691,7 +700,7 @@ JJYSeparateCachesMemoryTopology<makeInstrCache, makeDataCache, makeL2Cache,
           resultList.push_back(afterbgmemcycle);
         } else {
           // Cycle Memory Topology
-          for (auto &memAfterInstr : afterbgmemcycle.checkInstructionPart()) {
+          for (auto &memAfterInstr : afterbgmemcycle.checkInstructionPart()) { // impotant
             for (auto &memAfterData : memAfterInstr.checkDataPart()) {
               resultList.push_back(memAfterData);
             }
@@ -705,6 +714,7 @@ JJYSeparateCachesMemoryTopology<makeInstrCache, makeDataCache, makeL2Cache,
 }
 
 // JJY: 改变split
+// CSL： 在此函数中修改为了二级访存
 template <AbstractCache *(*makeInstrCache)(bool),
           AbstractCache *(*makeDataCache)(bool),
           AbstractCache *(*makeL2Cache)(bool), class BgMem>
@@ -712,11 +722,13 @@ std::list<JJYSeparateCachesMemoryTopology<makeInstrCache, makeDataCache,
                                           makeL2Cache, BgMem>>
 JJYSeparateCachesMemoryTopology<makeInstrCache, makeDataCache, makeL2Cache,
                                 BgMem>::mystartInstructionAccess() {
-  std::list<JJYSeparateCachesMemoryTopology> resultList;
+  std::list<JJYSeparateCachesMemoryTopology> resultList; // 右键reference，用find all找到
+                                                        // 虽然被识别成Not A Reference
+
 
   // We do not have any ongoing instruction access, so start one if there is one
   // waiting
-  if (!instructionComponent.ongoingAccess) {
+  if (!instructionComponent.ongoingAccess) { // 这个应该表示正在访存，无访存即访存
     // nothing accessed yet
     if (instructionComponent.waitingQueue.size() > 0) {
       instructionComponent.ongoingAccess =
@@ -724,16 +736,17 @@ JJYSeparateCachesMemoryTopology<makeInstrCache, makeDataCache, makeL2Cache,
       instructionComponent.waitingQueue.pop_front();
 
       // check cache for hit/l2hit/l2miss/l2unknown
-      Classification L1 = instructionComponent.cache->classify(
+      Classification L1 = instructionComponent.cache->classify( // ACImpl
           instructionComponent.ongoingAccess.get().access.addr);
+      // 直接L2，那不用判L1中没中？
       Classification L2 = L2Component.cache->classify(
           instructionComponent.ongoingAccess.get().access.addr);
       if (L1 == CL_HIT || (L1 == CL_UNKNOWN && ::isBCET)) {
-        this->processInstrCacheAccess(CL_HIT);
+        this->processInstrCacheAccess(CL_HIT); // 这在干啥？
       } else {
         if (L2 == CL_HIT || (L2 == CL_UNKNOWN && ::isBCET)) {
           if (L1 == CL_UNKNOWN) {
-            //时序异常
+            //时序异常 CSL: 啥意思？就多push back一个实例
             JJYSeparateCachesMemoryTopology l1hit(*this);
             l1hit.processInstrCacheAccess(CL_HIT);
             resultList.push_back(l1hit);
@@ -755,8 +768,8 @@ template <AbstractCache *(*makeInstrCache)(bool),
 std::list<JJYSeparateCachesMemoryTopology<makeInstrCache, makeDataCache,
                                           makeL2Cache, BgMem>>
 JJYSeparateCachesMemoryTopology<makeInstrCache, makeDataCache, makeL2Cache,
-                                BgMem>::mystartDataAccess() {
-  std::list<JJYSeparateCachesMemoryTopology> resultList;
+                                BgMem>::mystartDataAccess() { 
+  std::list<JJYSeparateCachesMemoryTopology> resultList;      
 
   // We do not have any ongoing data access, so start one if there is one
   // waiting
@@ -812,7 +825,7 @@ JJYSeparateCachesMemoryTopology<makeInstrCache, makeDataCache, makeL2Cache,
 
         ongoingAcc.bgMemAccessId = 0;
         // Blocked for cache update
-        ongoingAcc.l2timeBlocked = 1;
+        ongoingAcc.l2timeBlocked = 1; // bgm搞定就到L2阻塞了
       }
     } else if (ongoingAcc.bgl2AccessId != 0) {
       if (memory.l2finishedInstrAccess(ongoingAcc.bgl2AccessId) ||
@@ -824,6 +837,7 @@ JJYSeparateCachesMemoryTopology<makeInstrCache, makeDataCache, makeL2Cache,
         if (needAccessedInstructionAddresses()) {
           instructionComponent.justUpdatedCache = ongoingAcc.access.addr;
         }
+        // L2 更新
         L2Component.cache->update(ongoingAcc.access.addr,
                                   ongoingAcc.access.load_store, false,
                                   ongoingAcc.cl);
@@ -838,6 +852,7 @@ JJYSeparateCachesMemoryTopology<makeInstrCache, makeDataCache, makeL2Cache,
         if (needAccessedInstructionAddresses()) {
           instructionComponent.justUpdatedCache = ongoingAcc.access.addr;
         }
+        // L1 更新
         instructionComponent.cache->update(ongoingAcc.access.addr,
                                            ongoingAcc.access.load_store, false,
                                            ongoingAcc.cl);

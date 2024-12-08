@@ -50,6 +50,8 @@ namespace cache {
  * \brief   Implements a must analysis for an LRU cache set.
  * \todo Reimplement with SmallerOf magic as used in FifoMust.
  */
+
+// 感觉这里就是Must分析的实现了
 template <CacheTraits *T> // T应该是CacheTraits.h吧，封装有cache相连度等信息
 class LruMaxAgeAbstractCache : public progana::JoinSemiLattice {
   typedef LruMaxAgeAbstractCache<T> Self;
@@ -62,17 +64,18 @@ protected:
   /**
    * tags[i] has a maximal age of ages[i].
    * for i<j: (ages[i] < ages[j]) || (ages[i] == ages[j] && tags[i] < tags[j])
+   * 年龄相同，按tag排序，就随便找个顺序反正。所以这个就是实现16年cache survey里的Abstract Cache了
    */
   std::vector<TagType> tags;
-  std::vector<WayType> ages;
-  PosType size;
+  std::vector<WayType> ages; // 如果8bits用满256相连度就能0-255岁，值表示年龄
+  PosType size; // what is pos？同一个集合有多少个Line(Block)
   // bool isl2;
 
 public:
   using AnaDeps = std::tuple<>;
 
   explicit LruMaxAgeAbstractCache(bool assumeAnEmptyCache = false);
-  Classification classify(const AbstractAddress addr) const;
+  Classification classify(const AbstractAddress addr) const; // 读了
   LruMaxAgeUpdateReport<TagType> *
   update(AbstractAddress addr, AccessType load_store, AnaDeps *,
          bool wantReport = false, const Classification assumption = CL_UNKNOWN);
@@ -80,9 +83,9 @@ public:
   LruMaxAgeUpdateReport<TagType> *potentialUpdate(AbstractAddress addr,
                                                   AccessType load_store,
                                                   bool wantReport = false);
-  void join(const Self &y);
+  void join(const Self &y); // 读了
   bool lessequal(const Self &y) const;
-  void enterScope(const PersistenceScope &) {}
+  void enterScope(const PersistenceScope &) {} // persistence相关的do nothing
   void leaveScope(const PersistenceScope &) {}
   std::set<PersistenceScope> getPersistentScopes(const TagType tag) const {
     return std::set<PersistenceScope>();
@@ -115,7 +118,7 @@ LruMaxAgeAbstractCache<T>::classify(const AbstractAddress addr) const {
   unsigned CNN = 0;
   TagType tag = getTag<T>(addr);
   unsigned index = getindex<T>(addr);
-  if (T->LEVEL > 1) {
+  if (T->LEVEL > 1) { // 假设>层1的皆共享
     for (std::string &funtion : conflicFunctions) {
       for (unsigned address : mcif.addressinfo[funtion]) {
         if (getindex<T>(address) == index && getTag<T>(address) != tag) {
@@ -134,7 +137,7 @@ LruMaxAgeAbstractCache<T>::classify(const AbstractAddress addr) const {
     }
   if (size == T->ASSOCIATIVITY)
     return CL_MISS;
-  return CL_UNKNOWN;
+  return CL_UNKNOWN; // 不会到这
 }
 
 /**
@@ -170,11 +173,12 @@ LruMaxAgeAbstractCache<T>::potentialUpdate(AbstractAddress addr,
 
 ///\see dom::cache::CacheSetAnalysis<T>::update(const TagType tag, const
 /// Classification assumption)
+// 模拟LRU更新或者驱逐
 template <CacheTraits *T>
 LruMaxAgeUpdateReport<typename CacheTraits::TagType> *
 LruMaxAgeAbstractCache<T>::update(AbstractAddress addr, AccessType load_store,
                                   AnaDeps *, bool wantReport,
-                                  const Classification assumption) {
+                                  const Classification assumption) { // 为什么可以假设？
   WayType accessedAge = T->ASSOCIATIVITY;
   TagType tag = getTag<T>(addr);
 
@@ -248,12 +252,13 @@ LruMaxAgeAbstractCache<T>::update(AbstractAddress addr, AccessType load_store,
 }
 
 ///\see dom::cache::CacheSetAnalysis<T>::join(const Self& y)
+// 就是经典的取上界
 template <CacheTraits *T> void LruMaxAgeAbstractCache<T>::join(const Self &y) {
   std::vector<TagType> outTags(T->ASSOCIATIVITY);
   std::vector<WayType> outAges(T->ASSOCIATIVITY);
   int out = T->ASSOCIATIVITY - 1;
   int xIn = size - 1;
-  int yIn = y.size - 1;
+  int yIn = y.size - 1;// 从右往左扫
 
   while (xIn >= 0 || yIn >= 0) {
     // Select "greater" element
@@ -271,7 +276,7 @@ template <CacheTraits *T> void LruMaxAgeAbstractCache<T>::join(const Self &y) {
       joinedAge = ages[xIn];
       tag = tags[xIn];
       first = y.tags.begin();
-      last = y.tags.begin() + yIn + 1;
+      last = y.tags.begin() + yIn + 1; // 从y里找同一个tag，其实对应到paper里的block了
       --xIn;
     } else {
       joinedAge = y.ages[yIn];
@@ -289,12 +294,13 @@ template <CacheTraits *T> void LruMaxAgeAbstractCache<T>::join(const Self &y) {
         --out;
         break;
       }
+      // 假设是x grater，这里的细节在于，如果y里无对应，x也是不能出现在join后缓存的
   }
 
   // Move elements to member variables.
   ++out;
   size = T->ASSOCIATIVITY - out;
-  for (unsigned i = 0; i < size; ++i) {
+  for (unsigned i = 0; i < size; ++i) { // 挪到前面的位置
     tags[i] = outTags[out + i];
     ages[i] = outAges[out + i];
   }
@@ -384,7 +390,7 @@ template <CacheTraits *T>
 unsigned LruMaxAgeAbstractCache<T>::getMaxAge(const TagType tag) const {
   for (unsigned i = 0; i < size; ++i)
     if (tags[i] == tag)
-      return ages[i];
+      return ages[i]; // 一旦找到直接返回
   return T->ASSOCIATIVITY; // TODO Should this return \infty?
 }
 

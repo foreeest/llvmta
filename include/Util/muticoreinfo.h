@@ -105,7 +105,7 @@ public:
       return false;
     }
     bool changed = false;
-    unsigned taskNum = coreOrz[core][function];
+    unsigned taskNum = coreOrz[core][function]; // CoreNum -> map<function, index>核上第几个函数
     if (BWtime[core][taskNum].first != early ||
         BWtime[core][taskNum].second != latest) {
       changed = true;

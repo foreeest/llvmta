@@ -142,7 +142,7 @@ doPathAnalysis(const std::string identifier, const ExtremumType extremumType,
                LPAssignment *extpath = nullptr, const double timeLimit = 0.0);
 boost::optional<BoundItv>
 doPathAnalysis2(const std::string identifier, const ExtremumType extremumType,
-                std::vector<VarCoeffVector> &objectivelist,
+                std::vector<VarCoeffVector> &objectivelist, // 这改成vector了
                 const std::list<GraphConstraint> &constraints,
                 LPAssignment *extpath = nullptr, const double timeLimit = 0.0);
 
@@ -189,7 +189,7 @@ dispatchTimingPathAnalysis(const PAI &microArchAnaInfo) {
     InsensitiveGraph<MuArchDomain> arrivalCurveSg(microArchAnaInfo);
     return dispatchTimingPathAnalysisWeightProvider(&sg, &arrivalCurveSg);
   }
-  case PathAnalysisType::GRAPHILP: {
+  case PathAnalysisType::GRAPHILP: { // taken
     StateSensitiveGraph<MuArchDomain> sg(microArchAnaInfo);
     StateSensitiveGraph<MuArchDomain> arrivalCurveSg(microArchAnaInfo);
     return dispatchTimingPathAnalysisWeightProvider(&sg, &arrivalCurveSg);
@@ -518,13 +518,13 @@ void dispatchAdditionalMetricsToMax(TimingPathAnalysis<MuState> &tpa) {
  */
 template <class MuState>
 boost::optional<BoundItv> dispatchTimingPathAnalysisWeightProvider(
-    MuStateGraph<MuState> *sg, MuStateGraph<MuState> *arrivalCurveSg) {
+    MuStateGraph<MuState> *sg, MuStateGraph<MuState> *arrivalCurveSg) { // 两个参数本来一样的
   // Create a timing path analysis problem that captures all weight providers
   TimingPathAnalysis<MuState> tpa(sg);
   tpa.registerWeightProvider();
 
   // LEGACY CODE: perform a co-runner-sensitive analysis
-  if (CoRunnerSensitive) {
+  if (CoRunnerSensitive) { // 不选
     assert(SharedBus != SharedBusType::NONE &&
            "Co-runner-sensitive analysis makes only sense in "
            "combination with shared resources.");
@@ -543,7 +543,8 @@ boost::optional<BoundItv> dispatchTimingPathAnalysisWeightProvider(
   // AnalysisResults::getInstance().registerResult("staticMisses", 0);
 
   // Build state graph
-  sg->buildGraph();
+  sg->buildGraph(); // 耗点时，可能重要
+  // 对应输出 `-> Finished Microarchitectural State Graph Construction`
 
   // AnalysisResults::getInstance().finalize("staticallyRefutedWritebacks");
   // AnalysisResults::getInstance().finalize("staticMisses");
@@ -557,12 +558,12 @@ boost::optional<BoundItv> dispatchTimingPathAnalysisWeightProvider(
       myfile.open(std::to_string(Core) + "_" + AnalysisEntryPoint +
                       "_StateGraph_Time.dot",
                   std::ios_base::trunc);
-    } else {
+    } else { // taken
       myfile.open(std::to_string(Core) + "_" + AnalysisEntryPoint +
                       "_StateGraph_Time.vcg",
                   std::ios_base::trunc);
     }
-    sg->dump(myfile, nullptr);
+    sg->dump(myfile, nullptr); // StateSensitive
     myfile.close();
   } else // Quiet mode
   {
@@ -580,7 +581,7 @@ boost::optional<BoundItv> dispatchTimingPathAnalysisWeightProvider(
   // stats.startMeasurement("core_" + std::to_string(Core) + "_" +
   //                        AnalysisEntryPoint + "_Timing Path Analysis");
 
-  // Dump Interference response curves
+  // Dump Interference response curves 什么是干涉响应曲线？全都不取
   if (DumpInterferenceResponseCurve.getBits()) {
     dispatchDumpInterferenceResponseCurve(tpa);
     return boost::none;
@@ -608,7 +609,7 @@ boost::optional<BoundItv> dispatchTimingPathAnalysisWeightProvider(
   if(isBCET){
     tpa.getLowerConstraints(constraints);
   }else{
-    tpa.getUpperConstraints(constraints);
+    tpa.getUpperConstraints(constraints); // 这里重要吗？
   }
   // Add potential interference constraints for dram refreshes, crpd-cost, ...
   tpa.addAvailableInterferenceConstraints(constraints);
@@ -620,6 +621,7 @@ boost::optional<BoundItv> dispatchTimingPathAnalysisWeightProvider(
   VLIST.emplace_back(timeObjective);
 
   // jjy：输出MISS信息
+  // 这里传进去就是个打印？
   VarCoeffVector objInstMisses = tpa.l1sgnicmp->getEdgeWeightTimesTakenVector();
   VarCoeffVector objDataMisses = tpa.l1sgndcmp->getEdgeWeightTimesTakenVector();
   VarCoeffVector objL2Misses = tpa.l2sgncmp->getEdgeWeightTimesTakenVector();
@@ -630,7 +632,7 @@ boost::optional<BoundItv> dispatchTimingPathAnalysisWeightProvider(
 
 
   // Extremal path
-  LPAssignment Path;
+  LPAssignment Path; // 什么Path？
   // LPAssignment shortestPath;
   // Perform the longest path search (under given interference budgets)
   boost::optional<BoundItv> res;
@@ -642,6 +644,7 @@ boost::optional<BoundItv> dispatchTimingPathAnalysisWeightProvider(
     res = doPathAnalysis2("Time", ExtremumType::Maximum, VLIST, constraints,
                           &Path);
   }
+  // here对应输出 `-> Finished Path Analysis`
   /* dump the state graph with coloring information, overwriting the
    * previous dump */
   if (!QuietMode) {
@@ -667,26 +670,26 @@ boost::optional<BoundItv> dispatchTimingPathAnalysisWeightProvider(
   ar.registerResult("time", res);
 
   // If required, calculate additional metrics on a worst-case timing path
-  if (MetricsOnWCEP.getBits() && Path.size() > 0) {
+  if (MetricsOnWCEP.getBits() && Path.size() > 0) { // not taken
     assert(res.get().lb == res.get().ub &&
            "Cannot compute metrics on WCEP if bound is imprecise");
-    dispatchMetricsOnWCEP(tpa, res.get().ub);
+    dispatchMetricsOnWCEP(tpa, res.get().ub); 
   }
   // If requested or needed for compositional analysis, maximise additional
   // metrics
-  if (MetricsToMax.getBits() || CompAnaType.getBits()) {
+  if (MetricsToMax.getBits() || CompAnaType.getBits()) { // not taken
     dispatchAdditionalMetricsToMax(tpa);
   }
 
   // Write-back cache additional stuff
-  if (res && DataCacheWriteBack) {
+  if (res && DataCacheWriteBack) { // taken
     // Compute write-back cleanup cost (i.e. the cost of writing all left-over
     // dirty blocks)
     double cleanupCost = computeWBCleanupCost(Path);
     if (cleanupCost >= 0) {
       ar.registerResult("WritebackCleanupCost", cleanupCost);
     }
-  }
+  } // 有个输出 [WARNING] Registering the result WritebackCleanupCost more than once
 
   // Handle Compositional Blocking
   if (CompAnaType.isSet(CompositionalAnalysisType::SHAREDBUSBLOCKING)) {

@@ -119,8 +119,8 @@ private:
   typedef typename CacheTraits::WayType WayType;
   typedef typename CacheTraits::IndexType IndexType;
   typedef typename CacheTraits::TagType TagType;
-  typedef util::SharedStorage<SetType> SharedStorage;
-  typedef typename SharedStorage::SharedPtr SharedPtr;
+  typedef util::SharedStorage<SetType> SharedStorage; // set<SetType>，保证唯一性
+  typedef typename SharedStorage::SharedPtr SharedPtr; // 这啥？ 指向SetType的*
   typedef typename std::vector<SharedPtr>::iterator IterType;
   typedef typename std::vector<SharedPtr>::const_iterator ConstIterType;
   typedef typename C::AnaDeps AnalysisDependencies;
@@ -222,10 +222,12 @@ AbstractCacheImpl<T, C>::getTagAndIndex(AddressType addr) const {
  */
 template <CacheTraits *T, class C>
 AbstractCacheImpl<T, C>::AbstractCacheImpl(bool assumeAnEmptyCache)
-    : cacheSets(T->N_SETS) {
-  SetType initialCacheSetState(assumeAnEmptyCache);
-  SharedPtr inserted = cacheSetStorage.insert(initialCacheSetState);
-  cacheSets.assign(T->N_SETS, inserted);
+    : cacheSets(T->N_SETS) { // std::vector<SharedPtr>
+  SetType initialCacheSetState(assumeAnEmptyCache); // SetType就是C，就是CompositionalAbstractCache
+  SharedPtr inserted = cacheSetStorage.insert(initialCacheSetState); 
+  // cacheSetStorage是SharedStorage，即util::SharedStorage<SetType>，即set<SetType>
+  cacheSets.assign(T->N_SETS, inserted); // 给Vector赋值n个一样的值
+  // cacheSets = set<指向SetType的指针>
 }
 
 template <CacheTraits *T, class C>
@@ -240,7 +242,7 @@ AbstractCacheImpl<T, C> *AbstractCacheImpl<T, C>::clone() const {
  * addr \n \c CL_MISS    if there may not be a valid cache line for address \p
  * addr \n \c CL_UNKNOWN otherwise
  */
-template <CacheTraits *T, class C>
+template <CacheTraits *T, class C> // 这个C在DispatchMemory里传的参 为CompositionalAbstractCache
 Classification
 AbstractCacheImpl<T, C>::classify(const AbstractAddress &addr) const {
   /* fastpath for unknownAddressInterval */
@@ -248,6 +250,7 @@ AbstractCacheImpl<T, C>::classify(const AbstractAddress &addr) const {
     return CL_UNKNOWN;
   }
 
+  // Interval是因为无法精确确定而只有一个区间，ARRAY是精确的全局数组地址
   Address lowAligned = alignToCacheline(addr.getAsInterval().lower());
   Address upAligned = alignToCacheline(addr.getAsInterval().upper());
 
@@ -258,6 +261,7 @@ AbstractCacheImpl<T, C>::classify(const AbstractAddress &addr) const {
     unsigned tag, index;
     boost::tie(tag, index) = getTagAndIndex(lowAligned);
     result.join(cacheSets[index]->classify(AbstractAddress(lowAligned)));
+    // 研究一下这是啥？就是May、Must但这个应该会考虑多个HIT才算HIT
     lowAligned += T->LINE_SIZE;
   }
   return result;
@@ -326,7 +330,7 @@ UpdateReport *AbstractCacheImpl<T, C>::update(const AbstractAddress &addr,
          "Could have performed precise update");
   if (lower <= upper) {
     report = updateUnknownSets(lower, upper, addr, load_store, wantReport,
-                               assumption);
+                               assumption); // set就是cache的那个set
     if (wantReport && !report) {
       /* underlying reports are unjoinable - return no
        * information */
@@ -335,7 +339,7 @@ UpdateReport *AbstractCacheImpl<T, C>::update(const AbstractAddress &addr,
     return report;
   }
 
-  // wraparound:
+  // wraparound: 环绕
   report = updateUnknownSets(lower, T->N_SETS - 1, addr, load_store, wantReport,
                              assumption);
   report2 =
@@ -400,7 +404,7 @@ void AbstractCacheImpl<T, C>::join(const AbstractCache &ay) {
       continue;
     }
     SetType newCacheAnalysisSet(*cacheSets[i]);
-    newCacheAnalysisSet |= *y.cacheSets[i];
+    newCacheAnalysisSet |= *y.cacheSets[i]; // 二者相或，什么含义？这是lattice里的，定义为join
     cacheSets[i] = cacheSetStorage.insert(newCacheAnalysisSet);
   }
 }
@@ -415,7 +419,7 @@ bool AbstractCacheImpl<T, C>::lessequal(const AbstractCache &ay) const {
     if (cacheSets[i] == y.cacheSets[i]) { // Sets are equal
       continue;
     }
-    if (!cacheSets[i]->lessequal(*y.cacheSets[i])) {
+    if (!cacheSets[i]->lessequal(*y.cacheSets[i])) { // 每个SET都要 <
       return false;
     }
   }
@@ -425,8 +429,9 @@ bool AbstractCacheImpl<T, C>::lessequal(const AbstractCache &ay) const {
 template <CacheTraits *T, class C>
 void AbstractCacheImpl<T, C>::enterScope(const PersistenceScope &scope) {
   for (unsigned i = 0; i < T->N_SETS; ++i) {
-    SetType newCacheAnalysisSet(*cacheSets[i]); // std::vector<SharedPtr>
-    newCacheAnalysisSet.enterScope(scope);
+    // 取出来，调用个enterScope然后存回去
+    SetType newCacheAnalysisSet(*cacheSets[i]); // std::vector<SharedPtr>，指针解引用
+    newCacheAnalysisSet.enterScope(scope); // 怎么确定取persistence的，不取LruMaxAge的？
     cacheSets[i] = cacheSetStorage.insert(newCacheAnalysisSet);
   }
 }
@@ -462,7 +467,7 @@ AbstractCacheImpl<T, C>::getPersistentScopes(const AbstractAddress addr) const {
     unsigned tag, index;
     assert(addr.isPrecise());
     boost::tie(tag, index) = getTagAndIndex(addr.getAsInterval().lower());
-    ret = cacheSets[index]->getPersistentScopes(tag);
+    ret = cacheSets[index]->getPersistentScopes(tag); // CAC的
   }
   DEBUG_WITH_TYPE(
       "persistence", if (ret.size() > 0) {

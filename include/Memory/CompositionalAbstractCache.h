@@ -58,7 +58,7 @@ namespace cache {
  * influence on performance. Specify the analyses \p A1 and \p A2 such that \p
  * A1 will classify less tags as \c CL_UNKNOWN than \p A2. Normally, this means
  * that \p A1 should be the must analysis and \p A2 the may analysis.
- *
+ * 为啥要Must先呢？
  * \todo More information exchange.
  */
 template <class A1, class A2>
@@ -122,7 +122,7 @@ inline CompositionalAbstractCache<A1, A2>::CompositionalAbstractCache(
 template <class A1, class A2>
 Classification
 CompositionalAbstractCache<A1, A2>::classify(const AbstractAddress addr) const {
-  Classification cl = analysis1.classify(addr);
+  Classification cl = analysis1.classify(addr); // 这样先Must再May
   if (cl != CL_UNKNOWN)
     return cl;
   return analysis2.classify(addr);

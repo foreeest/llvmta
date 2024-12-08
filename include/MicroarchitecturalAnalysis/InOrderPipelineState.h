@@ -410,8 +410,9 @@ InOrderPipelineState<MemoryTopology>::cycle(
 #ifdef AUTO_CONVERGENCE_DETECTION
   ConvergenceType soFarDetectedConvergence = POTENTIALLY_NOT_CONVERGED;
 #endif
-
-  for (auto &iopsSucc : succ.cycleMemoryTopology()) { // 所有可能后继iops
+  // 在哪访存？
+  for (auto &iopsSucc : succ.cycleMemoryTopology()) { // 所有可能后继iops，访存！
+    // 这里访存吗？
     // assert cleared final stage
     assert(iopsSucc.inflightInstruction[WB_FIN_IND] == boost::none &&
            "Final should be cleared");
@@ -427,12 +428,13 @@ InOrderPipelineState<MemoryTopology>::cycle(
       // process Pipeline stages, 倒行逆施
       iopsSucc.processWriteBackStage();
 
-      for (auto &iopsMemSucc : iopsSucc.processMemoryStage(dep)) {
+      for (auto &iopsMemSucc : iopsSucc.processMemoryStage(dep)) { // 可能访存，本文件约960行
+        // C/C++插件跳转不了了
         for (auto &iopsExecSucc : iopsMemSucc.processExecuteStage(dep)) {
           InOrderPipelineState copy(iopsExecSucc);
           copy.processInstructionDecodeStage();
 
-          copy.processInstructionFetchStage();
+          copy.processInstructionFetchStage(); // 可能访存
 
           fastForwardAndInsert(copy, res
 #ifdef AUTO_CONVERGENCE_DETECTION
@@ -788,7 +790,7 @@ InOrderPipelineState<MemoryTopology>::cycleMemoryTopology() {
   bool potentialDataMissesPending = false;
   // If strictly in-order data und instr arbitration demanded, check for pending
   // potential misses
-  if (enableStrictInorderDataInstrArbitration()) {
+  if (enableStrictInorderDataInstrArbitration()) { // cur not taken
     if (this->inflightInstruction[IF_ID_IND]) {
       if (StaticAddrProvider->hasMachineInstrByAddr(
               this->inflightInstruction[IF_ID_IND].get().first)) {
@@ -817,8 +819,8 @@ InOrderPipelineState<MemoryTopology>::cycleMemoryTopology() {
       }
     }
   }
-  std::list<MemoryTopology> res = memory.cycle(potentialDataMissesPending); // JJYSMemTop的
-  // 应该是模拟一个周期的访存
+  // 下面就是把不同Mem包成不同IOPS而已
+  std::list<MemoryTopology> res = memory.cycle(potentialDataMissesPending); // JJYSCMemTop的
   std::list<InOrderPipelineState<MemoryTopology>> resultList;
   for (auto &mt : res) {
     InOrderPipelineState<MemoryTopology> iops(*this);
@@ -976,7 +978,7 @@ InOrderPipelineState<MemoryTopology>::processMemoryStage(
       while (access != std::end(succ.dataAccessIds)) {
         if (succ.memory.finishedDataAccess(access->second)) {
           access = succ.dataAccessIds.erase(access);
-          succ.accessDataFromMemoryTopology(addrInfo);
+          succ.accessDataFromMemoryTopology(addrInfo); // 这访存？
         } else {
           ++access;
         }
@@ -1242,14 +1244,14 @@ void InOrderPipelineState<MemoryTopology>::processInstructionFetchStage() {
   if (flushedFetchStage) { // what is flushedfetch? 冲掉指令，原因如分支预测错误等
     instructionAccessFinished = false;
     flushedFetchStage = false;
-    if (needPersistenceScopes()) { // 只要有某个cache用persistence就进来
+    if (needPersistenceScopes()) { // option简单函数，只要有某个cache用persistence就进来
       // If we just enter a scope after a speculation flush, do so
       int nextPopulatedStage = IF_ID_IND;
       while (nextPopulatedStage < NUMBEROFSTAGES && // 5
              !inflightInstruction[nextPopulatedStage]) {
-        ++nextPopulatedStage;
+        ++nextPopulatedStage; // 一直+，跳过被清除的，一直到早IF的、可以保留的
       }
-      assert(nextPopulatedStage < NUMBEROFSTAGES &&
+      assert(nextPopulatedStage < NUMBEROFSTAGES && // 正常需要成立
              "We flush pipe but have no flushing instr?");
       auto nextaddr = inflightInstruction[nextPopulatedStage].get().first;
       if (StaticAddrProvider->hasMachineInstrByAddr(this->pc.getPc().first) &&
@@ -1261,7 +1263,7 @@ void InOrderPipelineState<MemoryTopology>::processInstructionFetchStage() {
             std::make_pair(nextinstr->getParent(), fetchinstr->getParent());
             // what is parent?那个machineInstr应该是dependencies/llvm里的parent在里面就是
             // MachineBasicBlock
-        if (edge.first != edge.second &&
+        if (edge.first != edge.second && // 不在同一个basic block里
             PersistenceScopeInfo::getInfo().entersScope(edge)) { // 用于检查给定的边缘
             // 是否标志着持久性作用域的开始或结束。 怎么中间多个s？
           for (auto scope :
@@ -1277,9 +1279,10 @@ void InOrderPipelineState<MemoryTopology>::processInstructionFetchStage() {
       }
     }
     instructionAccessId = memory.accessInstr(this->pc.getPc().first, 1);
-    // 这怎么说？
+    // 这怎么说？JJYSCMT 约550行
   } else {
-    if (instructionAccessId) {
+    // 假设不flush
+    if (instructionAccessId) { // 当前cycle取指id
       if (memory.finishedInstrAccess(*instructionAccessId)) {
         DEBUG_WITH_TYPE(
             "indv", std::cerr << "Instruction access finished from memory.");

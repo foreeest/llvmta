@@ -69,7 +69,7 @@ doPathAnalysis2(const std::string identifier, const ExtremumType extremumType,
                 LPAssignment *extpath, const double timeLimit) {
   // Create the path analysis.
   std::unique_ptr<PathAnalysis> pathAnalysis;
-  const VarCoeffVector &objective = objectivelist.front();
+  const VarCoeffVector &objective = objectivelist.front(); // 但这也就只取一个
 
   // Fallback to lpsolve if gurobi license is missing.
 #ifdef GUROBIINSTALLED
@@ -108,7 +108,7 @@ doPathAnalysis2(const std::string identifier, const ExtremumType extremumType,
   pathAnalysis->setTimeLimit(timeLimit);
 
   // Perform the path analysis.
-  if (!pathAnalysis->calculateExtremalPath()) {
+  if (!pathAnalysis->calculateExtremalPath()) { // Extremal极值
     errs() << "Path analysis failed. Aborting\n";
     exit(1);
   }

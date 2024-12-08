@@ -42,7 +42,7 @@ namespace TimingAnalysisPass {
  * This information can later be used to obtain the objective function or to
  * formulate constraints.
  */
-template <class MuState, CacheType CT>
+template <class MuState, CacheType CT> // MuState是InorderPipelineState?
 class StateGraphCacheMissProvider
     : public StateGraphEdgeWeightProvider<
           MuState, std::pair<std::set<PersistenceScope>,
@@ -54,7 +54,7 @@ public:
   typedef std::pair<
       std::set<PersistenceScope>,
       std::set<std::pair<AbstractAddress, std::set<PersistenceScope>>>>
-      WeightType;
+      WeightType; // 得到的weight
 
   /**
    * Constructor. Call parent constructor with appropriate parameters.
@@ -111,7 +111,7 @@ private:
    * Extract the correct cache with type AbstractCache
    */
   const std::function<const dom::cache::AbstractCache *(const LocalMetrics &)>
-      extractCache;
+      extractCache; // 模板函数
 
   const std::function<boost::optional<AbstractAddress>(const LocalMetrics &)>
       getJustMissed;

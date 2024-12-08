@@ -45,6 +45,9 @@ using namespace llvm;
 
 namespace TimingAnalysisPass {
 
+// 包含上下文树，树的每一条路径（从根到叶）对应一个特定的执行上下文，叶子节点则代表与该上下文相关的分析结果。
+// 当执行 ::CREATE 指令时，会用新的子树替换叶子节点；而在 ::MERGE 指令时，多个子树会合并，信息会进行合并和传播。
+// 这种动态更新机制使得该分析能够应对程序控制流的变化（如分支和循环）
 /**
  * Class implementing the partitioning domain.
  * It takes a context-insensitive analysis and makes it context-sensitive by

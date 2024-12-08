@@ -147,7 +147,7 @@ public:
 
 private:
   const llvm::MachineLoop *loop;
-  std::set<MBBedge> backedges;
+  std::set<MBBedge> backedges; // 这啥？为何这么多回边
   unsigned taken;
 };
 

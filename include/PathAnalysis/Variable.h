@@ -32,7 +32,7 @@
 
 namespace TimingAnalysisPass {
 
-class Variable {
+class Variable { // 两个enum：一个是scope一个是type；三个成员，nodeid edgeid和type
 
   /**
    * =====================
@@ -46,7 +46,7 @@ private:
    * A scope type defines to what the value of a variable
    * refers. E.g. to an edge in the graph.
    */
-  enum ScopeType : char;
+  enum ScopeType : char; // 全局、边、节点
 
   /**
    * For each scope type, there is a defined way how a variable
