@@ -115,3 +115,5 @@ testcases/dirforgdb
 thirdParty/*
 
 venv/*
+
+*my_file*

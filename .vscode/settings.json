@@ -94,5 +94,10 @@
         "version": "cpp",
         "foodir": "cpp"
     },
-    "cmake.configureOnOpen": true
+    "cmake.configureOnOpen": true,
+    "marscode.chatLanguage": "cn",
+    "marscode.codeCompletionPro": {
+        "enableCodeCompletionPro": false
+    },
+    "marscode.enableInlineCommand": true
 }

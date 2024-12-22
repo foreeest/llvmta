@@ -43,6 +43,7 @@
 #include "Util/Options.h"
 #include "Util/Statistics.h"
 #include "Util/Util.h"
+#include "Util/muticoreinfo.h"
 
 #include "llvm/ADT/Optional.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
@@ -252,91 +253,137 @@ bool TimingAnalysisMain::doFinalization(Module &M) {
   // auto &output_data = manager.insert(
   //     "Summary", StatisticOutput("Summary", "Function Name", COL_LEN));
 
-  // CSLTODO进行UR和CEOP的获取
-
-  StatisticOutput output_data =
-      StatisticOutput("Summary", "Function Name", COL_LEN);
-  bool ETchage = true;
-  int ET = 0;
-  // char buf[10];
-  // memset(buf, 0, sizeof(buf));
-  // CSLTODO这个改成一次单核分析，多次WCEET分析
-  while (ETchage) { // 生命周期迭代
-    ET++;
-    ETchage = false;
-    for (unsigned i = 0; i < CoreNums; ++i) {
-      outs() << "Timing Analysis for core: " << i; // 输出到终端
-      Core = i; // 全局变量，控制当前分析的哪个单核
-      for (std::string &functionName : mcif.coreinfo[i]) { // multicore-info
-        outs() << " entry point: " << functionName << '\n';
-        AnalysisEntryPoint = functionName;
-        if (!QuietMode) {
-          // 持久域收集
-          Myfile.open("PersistenceScopes.txt", ios_base::trunc);
-          PersistenceScopeInfo::getInfo().dump(Myfile);
-          Myfile.close();
-        }
-        // Dispatch the value analysis
-        auto Arch = getTargetMachine().getTargetTriple().getArch();
-        if (Arch == Triple::ArchType::arm) {
-          dispatchValueAnalysis<Triple::ArchType::arm>(); // 这里就完成单核分析
-          // pair of 2 u
-          ETchage = 
-              ETchage || mcif.updateTaskTime(Core, AnalysisEntryPoint,
-                                             this->BCETtime, this->WCETtime); // B\W是全局
-              // 所以说目前一轮n核，每个核算完一次，冲突集都可能变化，而非轮内冲突集不变
-        } else if (Arch == Triple::ArchType::riscv32) {
-          dispatchValueAnalysis<Triple::ArchType::riscv32>();
-          ETchage =
-              ETchage || mcif.updateTaskTime(Core, AnalysisEntryPoint,
-                                             this->BCETtime, this->WCETtime);
-        } else {
-          assert(0 && "Unsupported ISA for LLVMTA");
-        }
-
-        // jjy:收集各个任务的WCET信息
-        if (vec.count(functionName) == 0) {
-          llvm::json::Object obj{
-              //  {"BCET", this->BCETtime}
-              {"id", task_id++},
-              {"partition", i},
-              {"WCET", this->WCETtime},
-              {"deadline", this->deadFunctionMap[functionName]},
-              {"period", this->periodFunctionMap[functionName]},
-              {"function", functionName},
-          };
-          auto *arr = result["tasks"].getAsArray();
-          arr->push_back(std::move(obj));
-          vec[functionName] = arr->size() - 1;
-        } else {
-          auto *arr = result["tasks"].getAsArray();
-          auto *ptr = (*arr)[vec[functionName]].getAsObject();
-          (*ptr)["WCET"] = this->WCETtime;
-          // (*ptr)["BCET"] = this->BCETtime;
-        }
-
-        output_data.update(functionName, "BCET", this->BCETtime);
-        output_data.update(functionName, "WCET", this->WCETtime);
-        output_data.update(functionName, "I-MISS", IMISS);
-        output_data.update(functionName, "D-MISS", DMISS);
-        output_data.update(functionName, "L2-MISS", L2MISS);
-        IMISS = 0, DMISS = 0, L2MISS = 0; // 全局变量
-      }
-      outs() << " No next analyse point for this core.\n";
+  // 进行UR和CEOP的获取
+  for (unsigned i = 0; i < CoreNums; ++i) {
+    outs() << "UR Analysis for core: " << i; 
+    Core = i;
+    for (std::string &functionName : mcif.coreinfo[i]) {
+      outs() << " entry point: " << functionName << '\n';
+      mcif.URCalculation(i, functionName);
     }
-    // CSLTODO完成了一轮对每个单核的分析，可以进行多核WCEET计算
-
-    outs() << "---------------------------------The " << ET
-           << " iteration is over----------------------------------\n";
-    // std::ofstream myfile;
-    // std::string fileName = "MISSC.txt";
-    // myfile.open(fileName, std::ios_base::trunc);
-    // myfile << "IMISS : " << ::IMISS << '\n'
-    //        << "DMISS : " << ::DMISS << '\n'
-    //        << "L2MISS : " << ::L2MISS << '\n';
-    // myfile.close();
-    IMISS = DMISS = L2MISS = 0; // RESET
   }
+
+  // 各单核分别分析
+  StatisticOutput output_data =
+    StatisticOutput("Summary", "Function Name", COL_LEN);
+    
+  outs() << "WCET Intra Analysis start";
+  for (unsigned i = 0; i < CoreNums; ++i) {
+    outs() << "Timing Analysis for core: " << i; // 输出到终端
+    Core = i; // 全局变量，控制当前分析的哪个单核
+    for (std::string &functionName : mcif.coreinfo[i]) { // multicore-info
+      outs() << " entry point: " << functionName << '\n';
+      AnalysisEntryPoint = functionName;
+      if (!QuietMode) {
+        // 持久域收集
+        Myfile.open("PersistenceScopes.txt", ios_base::trunc);
+        PersistenceScopeInfo::getInfo().dump(Myfile);
+        Myfile.close();
+      }
+      // Dispatch the value analysis
+      auto Arch = getTargetMachine().getTargetTriple().getArch();
+      if (Arch == Triple::ArchType::arm) {
+        dispatchValueAnalysis<Triple::ArchType::arm>(); // 这里就完成单核分析
+        // pair of 2 u
+        // ETchage = 
+        //     ETchage || mcif.updateTaskTime(Core, AnalysisEntryPoint,
+        //                                     this->BCETtime, this->WCETtime); // B\W是全局
+            // 所以说目前一轮n核，每个核算完一次，冲突集都可能变化，而非轮内冲突集不变
+      } else if (Arch == Triple::ArchType::riscv32) {
+        dispatchValueAnalysis<Triple::ArchType::riscv32>();
+        // ETchage =
+        //     ETchage || mcif.updateTaskTime(Core, AnalysisEntryPoint,
+        //                                     this->BCETtime, this->WCETtime);
+      } else {
+        assert(0 && "Unsupported ISA for LLVMTA");
+      }
+      mcif.intraBWtime[Core][AnalysisEntryPoint] = std::make_pair(this->BCETtime,
+        this->WCETtime); // 单核分析结果
+
+      // jjy:收集各个Task的WCET信息
+      // if (vec.count(functionName) == 0) {
+      //   llvm::json::Object obj{
+      //       //  {"BCET", this->BCETtime}
+      //       {"id", task_id++},
+      //       {"partition", i},
+      //       {"WCET", this->WCETtime},
+      //       {"deadline", this->deadFunctionMap[functionName]},
+      //       {"period", this->periodFunctionMap[functionName]},
+      //       {"function", functionName},
+      //   };
+      //   auto *arr = result["tasks"].getAsArray();
+      //   arr->push_back(std::move(obj));
+      //   vec[functionName] = arr->size() - 1;
+      // } else {
+      //   auto *arr = result["tasks"].getAsArray();
+      //   auto *ptr = (*arr)[vec[functionName]].getAsObject();
+      //   (*ptr)["WCET"] = this->WCETtime;
+      //   // (*ptr)["BCET"] = this->BCETtime;
+      // }
+
+      // output_data.update(functionName, "BCET", this->BCETtime);
+      // output_data.update(functionName, "WCET", this->WCETtime);
+      // output_data.update(functionName, "I-MISS", IMISS);
+      // output_data.update(functionName, "D-MISS", DMISS);
+      // output_data.update(functionName, "L2-MISS", L2MISS);
+      // IMISS = 0, DMISS = 0, L2MISS = 0; // 全局变量
+    }
+    outs() << " No next analyse point for this core.\n";
+  }
+
+  // 现在先无脑全部Task都冲突，即不实现生命周期迭代
+  outs() << "WCET Inter Analysis start";
+  for (unsigned local = 0; local < CoreNums; ++local) {
+    for (std::string &localFunc : mcif.coreinfo[local]){
+      // 选出本地task
+      unsigned wceetOfTSum = 0;
+      for (unsigned inter = 0; inter < CoreNums; ++inter) { // interference
+        if (local==inter) continue;
+        for (std::string &interFunc : mcif.getInitConflictFunction(local, localFunc)){
+          // 要考虑函数可能执行多次，这里默认getInitConflictFunction会多次返回
+          // 选出冲突task
+          unsigned wceetOf2T = 0; // 两个Task之间的WCEET
+          for (const CEOP &localP : mcif.CEOPs[local][localFunc]){
+            for (const CEOP &interP : mcif.CEOPs[inter][interFunc]){
+              // 选出两条Path, 开始dp，横干扰、竖本地
+              unsigned localPLen = localP.URs.size();
+              unsigned interPLen = interP.URs.size();
+              unsigned ArvVal[localPLen][interPLen] = {0};
+
+              for(unsigned i=1;i<localPLen;i++){
+                ArvVal[i][0] = mcif.getFValue(local, localP, i, inter, interP, 0) 
+                  + ArvVal[i-1][0]; // 感觉paper公式有问题，改成累加
+              }
+              for(unsigned i=1;i<interPLen;i++){
+                ArvVal[0][i] = mcif.getFValue(local, localP, 0, inter, interP, i)
+                  + ArvVal[0][i-1];
+              }
+              for(unsigned i=1;i<localPLen;i++){
+                for(unsigned j=1;j<interPLen;j++){
+                  ArvVal[i][j] = max(ArvVal[i-1][j], ArvVal[i][j-1]) 
+                    + mcif.getFValue(local, localP, i, inter, interP, j);
+                }
+              }
+              wceetOf2T = max(wceetOf2T, ArvVal[localPLen-1][interPLen]);
+            }
+          }
+          wceetOf2T *= Latency; // BG Mem的延迟值 from Command Line, 但感觉很容易重名
+          wceetOfTSum += wceetOf2T; // 不同核所有冲突的函数都加上
+        }
+      }
+      mcif.currWcetInter[local][localFunc] = wceetOfTSum;
+    }
+  }
+
+  // std::ofstream myfile;
+  // std::string fileName = "MISSC.txt";
+  // myfile.open(fileName, std::ios_base::trunc);
+  // myfile << "IMISS : " << ::IMISS << '\n'
+  //        << "DMISS : " << ::DMISS << '\n'
+  //        << "L2MISS : " << ::L2MISS << '\n';
+  // myfile.close();
+  // IMISS = DMISS = L2MISS = 0; // RESET
+
   // output_data.dump("output_information.txt", "a");
   // Release the call graph instance
   CallGraph::getGraph().releaseInstance();
@@ -365,7 +412,7 @@ void TimingAnalysisMain::dispatchValueAnalysis() {
   auto CvAnaInfo = ConstValAna.runAnalysis(); //MicroArch和ConstantValue的共同接口？
   // No，MuArch的类是CV的那个类的子类
   // step2: 循环计算
-  LoopBoundInfo->computeLoopBoundFromCVDomain(*CvAnaInfo);
+  LoopBoundInfo->computeLoopBoundFromCVDomain(*CvAnaInfo); // LoopBoundInfoPass *LoopBoundInfo;
 
   if (UseMetaDataAsAnnotation) {
     // Use the metadata as loop annotation
