@@ -28,15 +28,11 @@ public:
   };
 
   std::map<const llvm::MachineInstr *, X_Class> mi2xclass;
-   // UR 包含的访存执行次数和指令的访存分类
-  // MachineInstr本身携带地址信息，用MI可以用其它工具查找到访存和指令地址
-
-  // std::set<CEOP *> inCEOPs; // 属于哪条CEOP，可能不止一条(不要写成嵌套定义)
 };
 
 class CEOP{
 public:
-  std::set<UnorderedRegion> URs; // 路径上的UR(为何用set？需要一个排序方式)
+  std::vector<UnorderedRegion> URs; // 路径上的UR(按顺序)
   // 这里已经包含了排序信息，即UR编号
 };
 
@@ -60,9 +56,9 @@ public:
   std::vector<std::vector<std::string>> coreinfo;
 
   // 张伟复现
-  std::vector<std::map<std::string, std::set<CEOP>>> CEOPs; // 各个task的CEOP集合
+  std::map<unsigned, std::map<std::string, std::vector<CEOP>>> CEOPs; // 各个task的CEOP集合(别set了，比较函数不好写)
   std::vector<std::map<std::string, unsigned>> currWcetInter; // 目前各Task的WCEET，迭代更新
-    // TODO: 需要初始化
+  // TODO: 需要初始化
   std::vector<std::map<std::string, std::pair<unsigned, unsigned>>> intraBWtime; // 单核BW
 
   // 计算f值，想想怎么设计能索引; 注意从0还是1开始计数,目前0,见main
@@ -237,11 +233,17 @@ private:
   std::map<const llvm::MachineInstr*, unsigned> in_stack;
   unsigned stack_pt;
   std::map<const llvm::MachineInstr*, unsigned> mi_ur; // MI所在ur_id
-  std::map<unsigned, unsigned> ur_size;
+  std::map<unsigned, unsigned> ur_size; // 指含有多少条MI
   unsigned ur_id; // 强连通分量号，这个序号应该没有什么含义
+  std::map<const llvm::MachineInstr*, const llvm::MachineBasicBlock*> mi_mbb; // MI所在MBB
 
   // 新图，UR的出入边包含原来属于UR的MI的所有出入边
+  std::map<unsigned, std::vector<unsigned>> ur_graph;
+  std::map<unsigned, std::vector<const llvm::MachineInstr*>> ur_mi; // 没有顺序
 
+  // CEOP
+  std::vector<UnorderedRegion> tmpPath; // 暂存UR图DFS的PATH
+  std::vector<CEOP> tmpCEOPs; // 暂存本task上所有路径
 
 public:
   /// UR于CEOP的计算函数
@@ -259,18 +261,76 @@ public:
     // TODO 没清空完
     const llvm::MachineInstr* firstMI = &(analysisStart->front());
     tarjan(analysisStart, firstMI);
-    // TODO:还要收集一些信息
     collectUrInfo();
     // DAG的DFS标记CEOP
-
+    collectCEOPInfo(firstMI);
+    CEOPs[core][function] = tmpCEOPs;    
   }
-  // 反过来获取UR -> 
-  void collectUrInfo(){
 
+  // helper
+  void ceopDfs(unsigned u){
+    UnorderedRegion curUR{};
+    std::vector<const llvm::MachineInstr*> curMIs = ur_mi[u];
+    for(int i=0;i<curMIs.size();i++){
+      curUR.mi2xclass.insert(std::make_pair(curMIs[i], UnorderedRegion::X_Class{}));
+    }
+    tmpPath.push_back(curUR);
+
+    std::vector<unsigned> vs = ur_graph[u];
+    if(vs.size()==0){ // 出口
+      CEOP curCeop{};
+      curCeop.URs = tmpPath;
+      tmpCEOPs.push_back(curCeop); // recorded
+      tmpPath.pop_back();
+      return;
+    }
+
+    for(int i=0;i<vs.size();i++){
+      unsigned v = vs[i];
+      ceopDfs(v);
+    }
+    tmpPath.pop_back();
+    return;
+  }
+
+  // 构造之前定义的CEOP和UR对象，UR中的X_Class内容先设置为空
+  void collectCEOPInfo(const llvm::MachineInstr* firstMI){
+    unsigned s = mi_ur[firstMI];
+    ceopDfs(s);
+  }
+
+  // 反过来获取UR -> (出边、 MI)
+  void collectUrInfo(){
+    for(auto m_u:mi_ur){
+      const llvm::MachineInstr* mi_ptr = m_u.first;
+      unsigned ur_id_num = m_u.second;
+      auto it = ur_graph.find(ur_id_num);
+      if (it == ur_graph.end()){ // 首次记录某个UR
+        std::vector<unsigned> ur_out_edge_vec;
+        ur_graph[ur_id_num] = ur_out_edge_vec;
+        std::vector<const llvm::MachineInstr*> ur_mi_vec;
+        ur_mi[ur_id_num] = ur_mi_vec;
+      }
+      // 在ur中添加mi
+      ur_mi[ur_id_num].push_back(mi_ptr);
+      // 在ur中添加后继ur
+      const llvm::MachineBasicBlock* mbb_ptr = mi_mbb[mi_ptr];
+      std::vector<std::pair<const llvm::MachineBasicBlock*, 
+        const llvm::MachineInstr*>> succ_mis = getMiCFGSucc(mbb_ptr, mi_ptr);
+      for (auto succ_mi:succ_mis){
+        const llvm::MachineInstr* target_mi_ptr = succ_mi.second;
+        unsigned target_ur_id_num = mi_ur[target_mi_ptr];
+        if(ur_id_num!=target_ur_id_num){
+          ur_graph[ur_id_num].push_back(target_ur_id_num);
+        }
+      }
+    }
   }
 
   // 要带着MBB来遍历MI-CFG
   void tarjan(const llvm::MachineBasicBlock* MBB, const llvm::MachineInstr* MI){
+    mi_mbb[MI] = MBB; // 先收集一手MI属于哪个MBB，后面UR建图所用
+
     low[MI] = dfn[MI] = ++dfncnt;
     ur_stack[++stack_pt] = MI; 
     in_stack[MI] = 1;
