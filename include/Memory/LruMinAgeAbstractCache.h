@@ -125,33 +125,47 @@ inline LruMinAgeAbstractCache<T>::LruMinAgeAbstractCache(
       ageOfImplicitTags(assumeAnEmptyCache ? T->ASSOCIATIVITY : 0) {}
 
 ///\see dom::cache::CacheSetAnalysis<T>::classify(const TagType tag) const
+// template <CacheTraits *T>
+// Classification
+// LruMinAgeAbstractCache<T>::classify(const AbstractAddress addr) const {
+//   unsigned CNN = 0;
+//   TagType tag = getTag<T>(addr);
+//   unsigned index = getindex<T>(addr);
+//   if (T->LEVEL > 1) {
+//     for (std::string &funtion : conflicFunctions) {
+//       for (unsigned address : mcif.addressinfo[funtion]) {
+//         if (getindex<T>(address) == index && getTag<T>(address) != tag) {
+//           CNN++;
+//         }
+//       }
+//     }
+//   }
+
+//   if (ageOfImplicitTags + CNN < T->ASSOCIATIVITY)
+//     return CL_UNKNOWN;
+
+//   for (unsigned i = 0; i < explicitTags.size(); ++i) {
+//     if (explicitTags[i].tag == tag) {
+//       if (explicitTags[i].age + CNN >= T->ASSOCIATIVITY) {
+//         return CL_MISS; // 我觉得争用集对AM是没用的
+//       }
+//       return CL_UNKNOWN;
+//     }
+//   }
+//   return CL_MISS;
+// }
+
 template <CacheTraits *T>
 Classification
 LruMinAgeAbstractCache<T>::classify(const AbstractAddress addr) const {
-  unsigned CNN = 0;
   TagType tag = getTag<T>(addr);
-  unsigned index = getindex<T>(addr);
-  if (T->LEVEL > 1) {
-    for (std::string &funtion : conflicFunctions) {
-      for (unsigned address : mcif.addressinfo[funtion]) {
-        if (getindex<T>(address) == index && getTag<T>(address) != tag) {
-          CNN++;
-        }
-      }
-    }
-  }
-
-  if (ageOfImplicitTags + CNN < T->ASSOCIATIVITY)
+  if (ageOfImplicitTags < T->ASSOCIATIVITY)
     return CL_UNKNOWN;
 
-  for (unsigned i = 0; i < explicitTags.size(); ++i) {
-    if (explicitTags[i].tag == tag) {
-      if (explicitTags[i].age + CNN >= T->ASSOCIATIVITY) {
-        return CL_MISS;
-      }
+  for (unsigned i = 0; i < explicitTags.size(); ++i)
+    if (explicitTags[i].tag == tag)
       return CL_UNKNOWN;
-    }
-  }
+
   return CL_MISS;
 }
 

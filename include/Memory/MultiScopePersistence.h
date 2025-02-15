@@ -196,7 +196,7 @@ inline bool MultiScopePersistence<P>::lessequal(const Self &y) const {
   return true;
 }
 
-template <class P>
+template <class P> // P是elementwise那个类
 void MultiScopePersistence<P>::enterScope(const PersistenceScope &scope) {
 #ifdef STRICT_SCOPE_CONSISTENCY // 目前没定义
   assert(scopes2info.count(scope) == 0 && "Entered scope twice");
@@ -233,7 +233,7 @@ MultiScopePersistence<P>::getPersistentScopes(const TagType tag) const {
   std::set<PersistenceScope> result;
   for (auto &scope2pers : this->scopes2info) {
     if (scope2pers.second.isPersistent(tag)) { // define in elewise
-      result.insert(scope2pers.first);
+      result.insert(scope2pers.first); // scope2pers里有啥
     }
   }
   return result;
@@ -244,7 +244,7 @@ std::set<PersistenceScope>
 MultiScopePersistence<P>::getPersistentScopes(const GlobalVariable *var) const {
   std::set<PersistenceScope> result;
   for (auto &scope2pers : this->scopes2info) {
-    if (scope2pers.second.isPersistent(var)) {
+    if (scope2pers.second.isPersistent(var)) { // 这里的isPersistent是ElementWise类里那个
       result.insert(scope2pers.first);
     }
   }

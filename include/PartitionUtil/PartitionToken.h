@@ -47,7 +47,7 @@ class Directive;
  * We splitted call site and callee site of a function call for a cleaner
  * interface:
  * - to model that the entry function is a callee but has no caller
- * - to model multiple possible callees for one call site
+ * - to model multiple possible callees for one call site // 有这鬼东西？
  * - to model multiple call sites for one callee
  */
 enum class PartitionTokenType { // 分支、循环、函数
@@ -85,7 +85,7 @@ public:
                                   const PartitionToken &pt);
 
 private:
-  Directive *direc;
+  Directive *direc; // 这啥？
 };
 
 /**
@@ -111,9 +111,9 @@ private:
  * assumeTaken. For an assumeTaken=true token, there should also be an
  * assumeTaken=false token, to ensure soundness in the general setting.
  */
-class PartitionTokenIf : public PartitionToken {
+class PartitionTokenIf : public PartitionToken { // 某条branch指令选了T or F
 public:
-  PartitionTokenIf(std::string branchInstrID, bool assumeTaken);
+  PartitionTokenIf(std::string branchInstrID, bool assumeTaken); // 这个id好啊，可以借鉴
   PartitionTokenType getType() const;
   std::string print() const;
   std::string serialize() const;

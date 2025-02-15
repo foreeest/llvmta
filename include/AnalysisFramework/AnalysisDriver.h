@@ -325,6 +325,7 @@ void AnalysisDriverInstr<AnalysisDom>::initialize() {
 template <class AnalysisDom>
 void AnalysisDriverInstr<AnalysisDom>::analyseMachineBasicBlock(
     const MachineBasicBlock *MBB, const Context &ctx) {
+  // 调用者runAnalysis analyseMachineBasicBlock(currentBB, currentCtx);
   //多核地址信息收集 改动标记
   std::vector<unsigned> addrIlist;
 
@@ -334,11 +335,11 @@ void AnalysisDriverInstr<AnalysisDom>::analyseMachineBasicBlock(
   //                                     unsigned pos) const;等函数
   // 提供std::map<unsigned, int> reg2const; 和 std::map<Address, int> addr2const;
   // 这句代码可以理解为用一个MBB和一个ctx索引一个分析域
-  Context targetCtx(ctx);
+  Context targetCtx(ctx); // 复制一个
   // For each instruction, call corresponding transfer function
   for (auto &currentInstr : *MBB) {
     // If effect-less instruction found, we should ignore it during analysis
-    if (currentInstr.isTransient()) { // 瞬态，让我想到了随机过程
+    if (currentInstr.isTransient()) { // 伪指令等
       continue; // ... to next instruction
     }
     // 这里是主要内容，这干了啥？
@@ -394,9 +395,9 @@ void AnalysisDriverInstr<AnalysisDom>::analyseMachineBasicBlock(
     mylist.insert(MBB); // 上面已经收集完一个MBB里全部指令的访存和指令cache，所以标记为已取
   }
 
-  // Handle fallthrough cases to layout successor，这整段不是太懂在干啥
+  // Handle fallthrough cases to layout successor
   for (auto succit = MBB->succ_begin(); succit != MBB->succ_end(); ++succit) {
-    if (!MBB->isLayoutSuccessor(*succit)) // 什么叫layout？自己指向自己？
+    if (!MBB->isLayoutSuccessor(*succit)) // 什么叫layout？物理布局
       continue;
     // get Target basic block
     MachineBasicBlock *targetMBB = *succit;
@@ -426,6 +427,7 @@ void AnalysisDriverInstr<AnalysisDom>::analyseMachineBasicBlock(
     newOut.enterBasicBlock(targetMBB);
     // Join incoming information, and check whether the join changed something
     auto &targetMBBAnaInfo = mbb2anainfo->at(targetMBB); // PartitioningDomain
+    // 上下文树那个东西
     bool changed = targetMBBAnaInfo.addContext(targetCtx, newOut); // ？????
     // Add potential affected contexts to worklist
     if (changed) {
@@ -459,17 +461,19 @@ void AnalysisDriverInstr<AnalysisDom>::analyseInstruction(
     // Abstract transfer function，哪个的transfer？是ContextAwareAnalysisDomian的base
     // StateExplorationDomainBase
     newOut.transfer(currentInstr, &ctx, this->analysisResults); // takes the next instruction to analyze
-    // 主要功能函数
+    // 主要功能函数，譬如模拟mustate的状态转移
+    // analysisResults是啥？本文件的底层类AnaDeps analysisResults;也即
+    // std::tuple<AddressInformation &> addrInfoTuple(addressInfo);
   } else { // 处理函数调用的
     auto &cg = CallGraph::getGraph();
 
     AnalysisDom preCallInfo(newOut);
     // Unreachable calls
     if (preCallInfo.isBottom()) {
-      newOut = AnalysisDom(AnaDomInit::BOTTOM);
+      newOut = AnalysisDom(AnaDomInit::BOTTOM); // 空集
     } else if (cg.callsExternal(currentInstr)) {
       // The out out-information from external callee is top
-      AnalysisDom calleeout(AnaDomInit::TOP);
+      AnalysisDom calleeout(AnaDomInit::TOP); // 全集
       // Do a transfer call with external function.
       AnalysisDom afterCallInfo = newOut.transferCall(
           currentInstr, &ctx, this->analysisResults, nullptr, calleeout);
@@ -481,7 +485,7 @@ void AnalysisDriverInstr<AnalysisDom>::analyseInstruction(
       newOut = AnalysisDom(AnaDomInit::BOTTOM); // 何处定义
       // Reduce context for call
       Context reducedCtx(ctx);
-      reducedCtx.reduceOnCall();
+      reducedCtx.reduceOnCall(); // 清理一些老token
       // For each potential callee do
       for (const auto *callee : cg.getPotentialCallees(currentInstr)) {
         AnalysisDom toCalleeInfo(preCallInfo);

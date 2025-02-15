@@ -167,6 +167,8 @@ ElementWiseCountingPersistence<T>::isPersistent(const TagType tag) const {
    * this access as persistent since it corresponds to the initial load */
   return ele2conflicts.count(tag) == 0 ||
          ele2conflicts.at(tag).isPersistent(tag);
+         // 同一个set内，每个tag唯一标识一个block。一个ele2conflicts应该有一个set
+         // 内的块的冲突集；找getPersistentScopes是可以找到按index来的
 }
 
 template <CacheTraits *T>

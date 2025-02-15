@@ -163,7 +163,7 @@ void Context::reduceOnCall() {
   this->clearTokensOlderThan(tok, 0);
   tok.clear();
   // Throw away old loop tokens, if not unlimited
-  if (NumberLoopTokens >= 0) {
+  if (NumberLoopTokens >= 0) { // =0，不留此类token
     tok.insert(PartitionTokenType::LOOPPEEL);
     tok.insert(PartitionTokenType::LOOPITER);
     this->clearTokensOlderThan(tok, NumberLoopTokens);
@@ -171,16 +171,17 @@ void Context::reduceOnCall() {
     maxSize += NumberLoopTokens;
   }
   // Throw away old funcallee tokens, if not unlimited
-  if (NumberCalleeTokens >= 0) {
+  if (NumberCalleeTokens >= 0) { // =0
     tok.insert(PartitionTokenType::FUNCALLEE);
     this->clearTokensOlderThan(tok, NumberCalleeTokens);
     tok.clear();
     maxSize += NumberCalleeTokens;
   }
   // Throw away old callsite tokens
-  if (NumberCallsiteTokens >= 0) {
+  if (NumberCallsiteTokens >= 0) { // =1
     tok.insert(PartitionTokenType::CALLSITE);
-    this->clearTokensOlderThan(tok, NumberCallsiteTokens);
+    this->clearTokensOlderThan(tok, NumberCallsiteTokens); // 因为前面插入了一个
+    // 所以能否理解为就清除了一个
     tok.clear();
     maxSize += NumberCallsiteTokens;
   }

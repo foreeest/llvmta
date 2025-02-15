@@ -24,6 +24,51 @@ def logger_error(msg: str):
 
 parser = ArgumentParser('Run llvmta')
 
+# 胡杨林实验条件
+# parser.add_argument('-s', '--src', type=str, required=True, help='The C source file directory, e.g. ./path/to/test')
+# parser.add_argument('-o', '--out', type=str, default='./out', help='The directory to store the result files')
+# parser.add_argument('-t', '--tmp', type=str, default='./dirforgdb', help='The temporary directory to store the intermediate files')
+# parser.add_argument('-lf', '--lower_loop_file', type=str, default='LLoopAnnotations.csv', help='The lower bound loop file, relative to the source directory')
+# parser.add_argument('-uf', '--upper_loop_file', type=str, default='LoopAnnotations.csv', help='The upper bound loop file, relative to the source directory')
+# parser.add_argument('-c', '--core_info', type=str, default='CoreInfo.json', help='The core info file, relative to the source directory')
+# parser.add_argument('-n', '--num_cores', type=int, default=2, help='The number of cores to use')
+# parser.add_argument('-p', action='store_true', help='Generate the proper LoopAnnotations.csv and LLoopAnnotations.csv files')
+# parser.add_argument('--icache_line_size', type=int, default=64, help='The ICache Line Size, in bytes, default is 64')
+# parser.add_argument('--icache_assoc', type=int, default=8, help='The ICache Associativity, default is 8')
+# parser.add_argument('--icache_sets', type=int, default=64, help='The ICache Number of Sets, default is 64')
+# parser.add_argument('--dcache_line_size', type=int, default=64, help='The DCache Line Size, in bytes, default is 64')
+# parser.add_argument('--dcache_sets', type=int, default=64, help='The DCache Number of Sets, default is 64')
+# parser.add_argument('--dcache_assoc', type=int, default=8, help='The DCache Associativity, default is 8')
+# parser.add_argument('--l2_line_size', type=int, default=64, help='The L2 Cache Line Size, in bytes, default is 64')
+# parser.add_argument('--l2_assoc', type=int, default=8, help='The L2 Cache Associativity, default is 8')
+# parser.add_argument('--l2_sets', type=int, default=64, help='The L2 Cache Number of Sets, default is 64')
+# parser.add_argument('--mem_latency', type=int, default=100, help='The memory latency, default is 100 cycles')
+# parser.add_argument('--l2_latency', type=int, default=50, help='The L2 cache latency, default is 100 cycles')
+# parser.add_argument('--l1_latency', type=int, default=10, help='The L1 cache latency, default is 10 cycles')
+
+# 与原始一致的参数
+# parser.add_argument('-s', '--src', type=str, required=True, help='The C source file directory, e.g. ./path/to/test')
+# parser.add_argument('-o', '--out', type=str, default='./out', help='The directory to store the result files')
+# parser.add_argument('-t', '--tmp', type=str, default='./dirforgdb', help='The temporary directory to store the intermediate files')
+# parser.add_argument('-lf', '--lower_loop_file', type=str, default='LLoopAnnotations.csv', help='The lower bound loop file, relative to the source directory')
+# parser.add_argument('-uf', '--upper_loop_file', type=str, default='LoopAnnotations.csv', help='The upper bound loop file, relative to the source directory')
+# parser.add_argument('-c', '--core_info', type=str, default='CoreInfo.json', help='The core info file, relative to the source directory')
+# parser.add_argument('-n', '--num_cores', type=int, default=2, help='The number of cores to use')
+# parser.add_argument('-p', action='store_true', help='Generate the proper LoopAnnotations.csv and LLoopAnnotations.csv files')
+# parser.add_argument('--icache_line_size', type=int, default=64, help='The ICache Line Size, in bytes, default is 64')
+# parser.add_argument('--icache_assoc', type=int, default=3, help='The ICache Associativity, default is 3')
+# parser.add_argument('--icache_sets', type=int, default=256, help='The ICache Number of Sets, default is 256')
+# parser.add_argument('--dcache_line_size', type=int, default=64, help='The DCache Line Size, in bytes, default is 64')
+# parser.add_argument('--dcache_sets', type=int, default=256, help='The DCache Number of Sets, default is 256')
+# parser.add_argument('--dcache_assoc', type=int, default=2, help='The DCache Associativity, default is 2')
+# parser.add_argument('--l2_line_size', type=int, default=64, help='The L2 Cache Line Size, in bytes, default is 64')
+# parser.add_argument('--l2_assoc', type=int, default=16, help='The L2 Cache Associativity, default is 8')
+# parser.add_argument('--l2_sets', type=int, default=1024, help='The L2 Cache Number of Sets, default is 64')
+# parser.add_argument('--mem_latency', type=int, default=131, help='The memory latency, default is 100 cycles')
+# parser.add_argument('--l2_latency', type=int, default=6, help='The L2 cache latency, default is 100 cycles')
+# parser.add_argument('--l1_latency', type=int, default=4, help='The L1 cache latency, default is 10 cycles')
+
+# 张伟的实验条件(很小的cache，比原来小10倍都有)
 parser.add_argument('-s', '--src', type=str, required=True, help='The C source file directory, e.g. ./path/to/test')
 parser.add_argument('-o', '--out', type=str, default='./out', help='The directory to store the result files')
 parser.add_argument('-t', '--tmp', type=str, default='./dirforgdb', help='The temporary directory to store the intermediate files')
@@ -32,18 +77,19 @@ parser.add_argument('-uf', '--upper_loop_file', type=str, default='LoopAnnotatio
 parser.add_argument('-c', '--core_info', type=str, default='CoreInfo.json', help='The core info file, relative to the source directory')
 parser.add_argument('-n', '--num_cores', type=int, default=2, help='The number of cores to use')
 parser.add_argument('-p', action='store_true', help='Generate the proper LoopAnnotations.csv and LLoopAnnotations.csv files')
-parser.add_argument('--icache_line_size', type=int, default=64, help='The ICache Line Size, in bytes, default is 64')
-parser.add_argument('--icache_assoc', type=int, default=8, help='The ICache Associativity, default is 8')
-parser.add_argument('--icache_sets', type=int, default=64, help='The ICache Number of Sets, default is 64')
-parser.add_argument('--dcache_line_size', type=int, default=64, help='The DCache Line Size, in bytes, default is 64')
-parser.add_argument('--dcache_sets', type=int, default=64, help='The DCache Number of Sets, default is 64')
-parser.add_argument('--dcache_assoc', type=int, default=8, help='The DCache Associativity, default is 8')
-parser.add_argument('--l2_line_size', type=int, default=64, help='The L2 Cache Line Size, in bytes, default is 64')
-parser.add_argument('--l2_assoc', type=int, default=8, help='The L2 Cache Associativity, default is 8')
+parser.add_argument('--icache_line_size', type=int, default=32, help='The ICache Line Size, in bytes, default is 64')
+parser.add_argument('--icache_assoc', type=int, default=2, help='The ICache Associativity, default is 3')
+parser.add_argument('--icache_sets', type=int, default=16, help='The ICache Number of Sets, default is 256')
+parser.add_argument('--dcache_line_size', type=int, default=32, help='The DCache Line Size, in bytes, default is 64')
+parser.add_argument('--dcache_sets', type=int, default=16, help='The DCache Number of Sets, default is 256')
+parser.add_argument('--dcache_assoc', type=int, default=2, help='The DCache Associativity, default is 2')
+parser.add_argument('--l2_line_size', type=int, default=32, help='The L2 Cache Line Size, in bytes, default is 64')
+parser.add_argument('--l2_assoc', type=int, default=2, help='The L2 Cache Associativity, default is 8')
 parser.add_argument('--l2_sets', type=int, default=64, help='The L2 Cache Number of Sets, default is 64')
 parser.add_argument('--mem_latency', type=int, default=100, help='The memory latency, default is 100 cycles')
-parser.add_argument('--l2_latency', type=int, default=50, help='The L2 cache latency, default is 100 cycles')
-parser.add_argument('--l1_latency', type=int, default=10, help='The L1 cache latency, default is 10 cycles')
+parser.add_argument('--l2_latency', type=int, default=10, help='The L2 cache latency, default is 100 cycles')
+parser.add_argument('--l1_latency', type=int, default=1, help='The L1 cache latency, default is 10 cycles')
+
 
 args = parser.parse_args()
 
@@ -82,7 +128,7 @@ def handle_generate(args):
         "-float-abi=hard",
         "-mattr=-neon,+vfp2",
         "-O0",
-        "--ta-muarch-type=outoforder",
+        "--ta-muarch-type=inorder",
         "--ta-memory-type=separatecaches",
         "--ta-strict=false",
         "--ta-num-callsite-tokens=1",
@@ -246,7 +292,7 @@ def handle_run(args):
         "-float-abi=hard",
         "-mattr=-neon,+vfp2",
         "-O0",
-        "--ta-muarch-type=outoforder",
+        "--ta-muarch-type=inorder",
         "--ta-memory-type=separatecaches",
         "--ta-strict=false",
         f"--ta-loop-bounds-file={str(uf)}",

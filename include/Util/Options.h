@@ -267,6 +267,11 @@ extern llvm::cl::opt<unsigned> ILatency, DLatency;
  */
 extern llvm::cl::opt<bool> QuietMode;
 
+/*
+  输出张伟DAC2022部分的调试信息
+*/
+extern llvm::cl::opt<bool> ZWDebug;
+
 /**
  * Dumps the state graph in .vcg instead of .dot
  */

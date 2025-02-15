@@ -1296,7 +1296,7 @@ void InOrderPipelineState<MemoryTopology>::processInstructionFetchStage() {
       inflightInstruction[IF_ID_IND] = fetchedElement;
       instructionAccessFinished = false;
       if (needPersistenceScopes()) {
-        // Persistence Scope handling
+        // Persistence Scope handling // 这两条判断有什么区别？哦，是当前的和下一条
         if (StaticAddrProvider->hasMachineInstrByAddr(this->pc.getPc().first) &&
             StaticAddrProvider->hasMachineInstrByAddr(fetchedElement.first)) {
           auto fetchedinstr =
@@ -1307,6 +1307,8 @@ void InOrderPipelineState<MemoryTopology>::processInstructionFetchStage() {
               std::make_pair(fetchedinstr->getParent(), nextinstr->getParent());
           if (edge.first != edge.second &&
               PersistenceScopeInfo::getInfo().entersScope(edge)) {
+                // 这意思是说如果进入了新的PersistenceScope，那就获取这些scope，然后
+                // memory.enterScope(scope);
             for (auto scope :
                  PersistenceScopeInfo::getInfo().getEnteringScopes(edge)) {
               DEBUG_WITH_TYPE("persistence",

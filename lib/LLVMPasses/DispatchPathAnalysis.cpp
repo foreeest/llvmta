@@ -62,10 +62,10 @@ std::set<std::string> writtenByDoPathAnalysis;
 //     PA->getVarId(V);
 //   }
 // }std::vector<VarCoeffVector>
-boost::optional<BoundItv>
+boost::optional<BoundItv> // 这函数感觉就在调用LPSOLVE的接口
 doPathAnalysis2(const std::string identifier, const ExtremumType extremumType,
                 std::vector<VarCoeffVector> &objectivelist,
-                const std::list<GraphConstraint> &constraints,
+                const std::list<GraphConstraint> &constraints, // VarCoeffVector不是GraphConstraint一部分吗
                 LPAssignment *extpath, const double timeLimit) {
   // Create the path analysis.
   std::unique_ptr<PathAnalysis> pathAnalysis;
@@ -135,7 +135,7 @@ doPathAnalysis2(const std::string identifier, const ExtremumType extremumType,
     return boost::none;
   } else if (pathAnalysis->hasSolution()) {
     if (extpath != nullptr) {
-      pathAnalysis->getExtremalPath(*extpath);
+      pathAnalysis->getExtremalPath(*extpath); // 打印路径？
     }
     //输出miss信息改动标记
     std::vector<std::string> name = {" ", "IMISS", "DMISS", "L2MISS", "STBUS"};

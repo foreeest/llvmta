@@ -112,32 +112,45 @@ inline LruMaxAgeAbstractCache<T>::LruMaxAgeAbstractCache(
     : tags(T->ASSOCIATIVITY), ages(T->ASSOCIATIVITY), size(0) {}
 
 ///\see dom::cache::CacheSetAnalysis<T>::classify(const TagType tag) const
+// template <CacheTraits *T>
+// Classification
+// LruMaxAgeAbstractCache<T>::classify(const AbstractAddress addr) const {
+//   unsigned CNN = 0;
+//   TagType tag = getTag<T>(addr);
+//   unsigned index = getindex<T>(addr);
+//   if (T->LEVEL > 1) { // 假设>层1的皆共享
+//     for (std::string &funtion : conflicFunctions) {
+//       for (unsigned address : mcif.addressinfo[funtion]) {
+//         if (getindex<T>(address) == index && getTag<T>(address) != tag) {
+//           CNN++;
+//         }
+//       }
+//     }
+//   }
+
+//   for (unsigned i = 0; i < size; ++i)
+//     if (tags[i] == tag) {
+//       if (ages[i] + CNN >= T->ASSOCIATIVITY) {
+//         return CL_MISS; // 严谨一点应该是NC
+//       }
+//       return CL_HIT;
+//     }
+//   if (size == T->ASSOCIATIVITY)
+//     return CL_MISS;
+//   return CL_UNKNOWN;
+// }
+// 原版
 template <CacheTraits *T>
 Classification
 LruMaxAgeAbstractCache<T>::classify(const AbstractAddress addr) const {
-  unsigned CNN = 0;
   TagType tag = getTag<T>(addr);
-  unsigned index = getindex<T>(addr);
-  if (T->LEVEL > 1) { // 假设>层1的皆共享
-    for (std::string &funtion : conflicFunctions) {
-      for (unsigned address : mcif.addressinfo[funtion]) {
-        if (getindex<T>(address) == index && getTag<T>(address) != tag) {
-          CNN++;
-        }
-      }
-    }
-  }
-
   for (unsigned i = 0; i < size; ++i)
-    if (tags[i] == tag) {
-      if (ages[i] + CNN >= T->ASSOCIATIVITY) {
-        return CL_MISS;
-      }
+    if (tags[i] == tag)
       return CL_HIT;
-    }
   if (size == T->ASSOCIATIVITY)
     return CL_MISS;
-  return CL_UNKNOWN; // 不会到这
+  return CL_UNKNOWN; // 因为没有在分析的时候进入，但cache又没满，这个块可能初始在里面
+      // 也可能不在，所以是NC，非常严谨
 }
 
 /**

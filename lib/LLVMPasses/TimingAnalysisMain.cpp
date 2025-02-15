@@ -43,7 +43,7 @@
 #include "Util/Options.h"
 #include "Util/Statistics.h"
 #include "Util/Util.h"
-#include "Util/muticoreinfo.h"
+// #include "Util/muticoreinfo.h"
 
 #include "llvm/ADT/Optional.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
@@ -106,7 +106,7 @@ bool TimingAnalysisMain::runOnMachineFunction(MachineFunction &MF) {
 
 void TimingAnalysisMain::parseCoreInfo(const std::string &fileName) {
   // TODO
-  mcif.setSize(CoreNums.getValue());
+  mcif.setSize(CoreNums.getValue()); // mcif的core初始化
   auto jsonfile = MemoryBuffer::getFile(fileName, true);
   if (!jsonfile) {
     fprintf(stderr, "Unable to open file %s, exit.", fileName.c_str());
@@ -247,27 +247,17 @@ bool TimingAnalysisMain::doFinalization(Module &M) {
       {{"system", llvm::json::Object{{"core_count", CoreNums.getValue()}}},
        {"tasks", llvm::json::Array()}}};
 
-  std::map<std::string, size_t> vec;
+  // std::map<std::string, size_t> vec;
 
   auto &manager = StatisticOutputManager::getInstance();
   // auto &output_data = manager.insert(
   //     "Summary", StatisticOutput("Summary", "Function Name", COL_LEN));
 
-  // 进行UR和CEOP的获取
-  for (unsigned i = 0; i < CoreNums; ++i) {
-    outs() << "UR Analysis for core: " << i; 
-    Core = i;
-    for (std::string &functionName : mcif.coreinfo[i]) {
-      outs() << " entry point: " << functionName << '\n';
-      mcif.URCalculation(i, functionName);
-    }
-  }
-
   // 各单核分别分析
   StatisticOutput output_data =
     StatisticOutput("Summary", "Function Name", COL_LEN);
     
-  outs() << "WCET Intra Analysis start";
+  outs() << "WCET Intra Analysis start\n";
   for (unsigned i = 0; i < CoreNums; ++i) {
     outs() << "Timing Analysis for core: " << i; // 输出到终端
     Core = i; // 全局变量，控制当前分析的哪个单核
@@ -297,8 +287,9 @@ bool TimingAnalysisMain::doFinalization(Module &M) {
       } else {
         assert(0 && "Unsupported ISA for LLVMTA");
       }
-      mcif.intraBWtime[Core][AnalysisEntryPoint] = std::make_pair(this->BCETtime,
-        this->WCETtime); // 单核分析结果
+      mcif.currWcetIntra[Core][AnalysisEntryPoint] = this->WCETtime;
+      // mcif.intraBWtime[Core][AnalysisEntryPoint] = std::make_pair(this->BCETtime,
+      //   this->WCETtime); // 单核分析结果
 
       // jjy:收集各个Task的WCET信息
       // if (vec.count(functionName) == 0) {
@@ -331,8 +322,23 @@ bool TimingAnalysisMain::doFinalization(Module &M) {
     outs() << " No next analyse point for this core.\n";
   }
 
-  // 现在先无脑全部Task都冲突，即不实现生命周期迭代
-  outs() << "WCET Inter Analysis start";
+  // MachineLoopInfo &MLI = getAnalysis<MachineLoopInfo>();
+
+  // 进行UR和CEOP的获取; 前面单核分析完成了XClass收集
+  for (unsigned i = 0; i < CoreNums; ++i) {
+    outs() << "UR Analysis for core: " << i; 
+    Core = i;
+    for (std::string &functionName : mcif.coreinfo[i]) {
+      outs() << " entry point: " << functionName << '\n';
+      mcif.URCalculation(i, functionName);
+      outs() << "Core-" << i << " Func: " << functionName <<
+        " have " << mcif.CEOPs[i][functionName].size() << " CEOP(s)"
+        << '\n';
+    }
+  }
+
+  // 现在先不实现生命周期迭代
+  outs() << "WCET Inter Analysis start\n";
   for (unsigned local = 0; local < CoreNums; ++local) {
     for (std::string &localFunc : mcif.coreinfo[local]){
       // 选出本地task
@@ -340,6 +346,7 @@ bool TimingAnalysisMain::doFinalization(Module &M) {
       for (unsigned inter = 0; inter < CoreNums; ++inter) { // interference
         if (local==inter) continue;
         for (std::string &interFunc : mcif.getInitConflictFunction(local, localFunc)){
+          // 这个Init的就是返回几乎全部，反正是第一轮
           // 要考虑函数可能执行多次，这里默认getInitConflictFunction会多次返回
           // 选出冲突task
           unsigned wceetOf2T = 0; // 两个Task之间的WCEET
@@ -364,7 +371,7 @@ bool TimingAnalysisMain::doFinalization(Module &M) {
                     + mcif.getFValue(local, localP, i, inter, interP, j);
                 }
               }
-              wceetOf2T = max(wceetOf2T, ArvVal[localPLen-1][interPLen]);
+              wceetOf2T = max(wceetOf2T, ArvVal[localPLen-1][interPLen-1]);
             }
           }
           wceetOf2T *= Latency; // BG Mem的延迟值 from Command Line, 但感觉很容易重名
@@ -372,6 +379,21 @@ bool TimingAnalysisMain::doFinalization(Module &M) {
         }
       }
       mcif.currWcetInter[local][localFunc] = wceetOfTSum;
+      outs()<<"Core-"<<local<<" Func:"<<localFunc<<
+        " 's WCEET is "<<wceetOfTSum<<"\n";
+    }
+  }
+
+  // WCET_{sum} = WCET_{intra} + WCEET
+  std::ofstream myfile;
+  std::string fileName = "ZW_Output.txt";
+  myfile.open(fileName, std::ios_base::trunc); // 表示若文件存在则清空内容，若不存在则创建文件
+  for (unsigned local = 0; local < CoreNums; ++local) {
+    for (std::string &localFunc : mcif.coreinfo[local]){
+      unsigned wcet_intra = mcif.currWcetIntra[local][localFunc];
+      unsigned wceet = mcif.currWcetInter[local][localFunc];
+      myfile << "Core-"<<local<<" F-"<<localFunc<<
+        " intra:"<<wcet_intra<<" wceet:"<<wceet<<std::endl;
     }
   }
 
@@ -490,6 +512,10 @@ void TimingAnalysisMain::dispatchValueAnalysis() {
   l2cacheConf.checkParams();
   // 分别完成一次WCET 和 BCET计算
   // WCET
+
+  // debug
+  // ::isBCET = true;
+
   // Select the analysis to execute
   dispatchAnalysisType(AddrInfo); // 这里根据几种分析TYPE分别完成计算
   // Release the call graph instance
@@ -501,13 +527,13 @@ void TimingAnalysisMain::dispatchValueAnalysis() {
 
   // Stats.stopMeasurement("Complete Analysis");
 
-  Myfile.open(std::to_string(this->coreNum) + "_" + AnalysisEntryPoint +
+  Myfile.open(std::to_string(Core) + "_" + AnalysisEntryPoint +
                   "_Statistics.txt",
               ios_base::app);
   Stats.dump(Myfile);
   Myfile.close();
 
-  Myfile.open(std::to_string(this->coreNum) + "_" + AnalysisEntryPoint +
+  Myfile.open(std::to_string(Core) + "_" + AnalysisEntryPoint +
                   "_TotalBound.xml",
               ios_base::app);
   Ar.dump(Myfile);
@@ -518,7 +544,7 @@ void TimingAnalysisMain::dispatchValueAnalysis() {
   // Write results and statistics
   Statistics &Stats1 = Statistics::getInstance();
   AnalysisResults &Ar1 = AnalysisResults::getInstance();
-  Myfile.open(std::to_string(this->coreNum) + "_" + AnalysisEntryPoint +
+  Myfile.open(std::to_string(Core) + "_" + AnalysisEntryPoint +
                   "_TotalBound.xml",
               ios_base::app);
   Ar1.dump(Myfile);

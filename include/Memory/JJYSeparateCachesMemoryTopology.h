@@ -35,8 +35,12 @@
 #include "MicroarchitecturalAnalysis/InOrderPipelineState.h"
 #include "Util/GlobalVars.h"
 #include "Util/Options.h"
+#include "LLVMPasses/StaticAddressProvider.h"
 
 #include <list>
+
+#include <fstream>  // 用于 ofstream 和文件操作
+#include <iomanip>  // 用于 std::hex 等格式化操作
 
 namespace TimingAnalysisPass {
 
@@ -738,15 +742,52 @@ JJYSeparateCachesMemoryTopology<makeInstrCache, makeDataCache, makeL2Cache,
       // check cache for hit/l2hit/l2miss/l2unknown
       Classification L1 = instructionComponent.cache->classify( // ACImpl
           instructionComponent.ongoingAccess.get().access.addr);
-      // 直接L2，那不用判L1中没中？
+      // 直接L2，那不用判L1中没中？应该不用，因为classify不改变状态
       Classification L2 = L2Component.cache->classify(
           instructionComponent.ongoingAccess.get().access.addr);
+      
+      // ZW复现
+      // 模仿getindex写的
+      AddressInterval itv 
+        = instructionComponent.ongoingAccess.get().access.addr.getAsInterval();
+      const TimingAnalysisPass::Address tmp_upper_cache_line
+        = itv.upper() & ~(l2cacheConf.LINE_SIZE - 1);
+      const TimingAnalysisPass::Address tmp_lower_cache_line
+        = itv.lower() & ~(l2cacheConf.LINE_SIZE - 1);
+      assert(tmp_lower_cache_line==tmp_upper_cache_line);
+      if(!isBCET){
+        // debug why_addr2mi_wrong
+        if(ZWDebug){
+          std::ofstream Myfile;
+          Myfile.open("why_addr2mi_wrong.txt", std::ios_base::app);
+          Myfile << "upper:"<< std::hex << tmp_upper_cache_line << 
+            " lower:" << std::hex << tmp_lower_cache_line << std::endl; 
+          Myfile.close();
+        }
+
+        // if(tmp_lower_cache_line!=0){ // 这个也行，因为似乎程序结束就是一个addr为0的指令
+        if(StaticAddrProvider->hasMachineInstrByAddr(itv.lower())){
+          const llvm::MachineInstr* miptr = 
+            StaticAddrProvider->getMachineInstrByAddr(itv.lower());
+          mcif.addXClass(Core, AnalysisEntryPoint, miptr, L2, 1); // x传进去会自己算
+          // 这就随便填个1
+        }
+      }else{
+        if(ZWDebug){
+          std::ofstream Myfile;
+          Myfile.open("why_addr2mi_wrong_b.txt", std::ios_base::app);
+          Myfile << "upper:"<< std::hex << tmp_upper_cache_line << 
+            " lower:" << std::hex << tmp_lower_cache_line << std::endl; 
+          Myfile.close();
+        }
+      }
+
       if (L1 == CL_HIT || (L1 == CL_UNKNOWN && ::isBCET)) {
-        this->processInstrCacheAccess(CL_HIT); // 这在干啥？
+        this->processInstrCacheAccess(CL_HIT); // 这在干啥？ 更改状态
       } else {
         if (L2 == CL_HIT || (L2 == CL_UNKNOWN && ::isBCET)) {
           if (L1 == CL_UNKNOWN) {
-            //时序异常 CSL: 啥意思？就多push back一个实例
+            //时序异常 // CSL:啥意思？就多push back一个实例相当于分裂，用于避免时序异常
             JJYSeparateCachesMemoryTopology l1hit(*this);
             l1hit.processInstrCacheAccess(CL_HIT);
             resultList.push_back(l1hit);
@@ -1066,7 +1107,7 @@ void JJYSeparateCachesMemoryTopology<
   // Remember Classification
   auto &ongoingAcc = instructionComponent.ongoingAccess.get();
   ongoingAcc.cl = cl; // hit/l2hit/l2miss/
-  // We do not think this code do actual work, so just ignore them.
+  // We do not think this code do actual work, so just ignore them. // 啊？
 
   if (cl == CL_HIT) {
     ongoingAcc.l1timeBlocked = instructionComponent.cache->getHitLatency();

@@ -40,6 +40,9 @@
 
 #include <sstream>
 
+#include <fstream>  // 用于 ofstream 和文件操作
+#include <iomanip>  // 用于 std::hex 等格式化操作
+
 using namespace llvm;
 
 namespace TimingAnalysisPass {
@@ -100,7 +103,7 @@ bool StaticAddressProvider::runOnMachineBasicBlock(MachineBasicBlock &MBB) {
         // If we have a constant pool entry remember its address
         case ARM::CONSTPOOL_ENTRY: {
           unsigned LabelID = I.getOperand(0).getImm(); // The label to load from
-          unsigned CPI =
+          unsigned CPI = // constant pool index
               I.getOperand(1)
                   .getIndex(); // Index of the given constant in the pool
           auto MCP =
@@ -390,6 +393,12 @@ StaticAddressProvider::getMachineInstrByAddr(unsigned Addr) {
 }
 
 unsigned StaticAddressProvider::getAddr(const MachineInstr *I) {
+  if(Ins2addr.count(I) <= 0){
+    std::ofstream Myfile;
+    Myfile.open("why_mi2addr_wrong.txt", std::ios_base::app);
+    Myfile << "I.Op is:" << I->getOpcode() << std::endl; 
+    Myfile.close();
+  }
   assert(Ins2addr.count(I) > 0 && "Cannot find address for this instruction");
   return Ins2addr.find(I)->second;
 }

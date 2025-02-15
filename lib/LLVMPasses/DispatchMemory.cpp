@@ -139,7 +139,7 @@ makeOptionsCache(CacheReplPolicyType replpol, PersistenceType persType,
     assert(ArrayAnalysis);
     return makeDirtinessCache<CacheConfig,
                               LruMaxAgeArrayAwareCache<CacheConfig>>(
-        persType, assumeEmptyCache);
+        persType, assumeEmptyCache); // 这第二个模板参数就是must
   }
   // taken
   return makeDirtinessCache<CacheConfig, LruMaxAgeAbstractCache<CacheConfig>>(

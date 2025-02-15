@@ -89,6 +89,11 @@ cl::opt<bool>
               cl::cat(LLVMTACat));
 
 cl::opt<bool>
+    ZWDebug("ta-zw-debug", cl::init(true),
+              cl::desc("Get some debug infomation about Zhangwei's DAC2022 "),
+              cl::cat(MultiCoreCat));
+
+cl::opt<bool>
     DumpVcgGraph("ta-dumpb-vcg-graph",
                  cl::desc("Dumps the StateGraph in .vcg format (default:.dot)"),
                  cl::init(false), cl::cat(LLVMTACat));

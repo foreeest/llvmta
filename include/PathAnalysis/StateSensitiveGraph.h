@@ -72,7 +72,7 @@ namespace TimingAnalysisPass {
  * page 44, as "subsume edges". This does not directly lead to an exponential
  * blowup - it is basically left for the later ILP solver.
  */
-template <class MicroArchDom>
+template <class MicroArchDom> // 类定义一直到540行
 class StateSensitiveGraph : public MuStateGraph<typename MicroArchDom::State> {
 public:
   typedef AnalysisInformation<PartitioningDomain<MicroArchDom, MachineInstr>,
@@ -901,7 +901,7 @@ void StateSensitiveGraph<MicroArchDom>::buildIntraBasicBlockEdges() {
           continue;
 
         // init working set with all states of this context
-        std::set<unsigned> workingSetOfStates;
+        std::set<unsigned> workingSetOfStates; // 用数字标识状态，估计这个状态和论文的图中一致
         workingSetOfStates.insert(ctxStatesMap.second.begin(),
                                   ctxStatesMap.second.end());
 

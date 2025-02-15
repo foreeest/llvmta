@@ -40,7 +40,7 @@
 #include "AnalysisFramework/AnalysisResults.h"
 #include "Util/Options.h"
 
-#include "Util/muticoreinfo.h"
+// #include "Util/muticoreinfo.h"
 #include <iostream>
 #include <map>
 #include <queue>

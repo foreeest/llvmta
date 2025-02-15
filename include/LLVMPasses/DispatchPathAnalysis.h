@@ -190,8 +190,10 @@ dispatchTimingPathAnalysis(const PAI &microArchAnaInfo) {
     return dispatchTimingPathAnalysisWeightProvider(&sg, &arrivalCurveSg);
   }
   case PathAnalysisType::GRAPHILP: { // taken
-    StateSensitiveGraph<MuArchDomain> sg(microArchAnaInfo);
+    StateSensitiveGraph<MuArchDomain> sg(microArchAnaInfo); // microArchAnaInfo这个
+      // 参数存储了从MicroArch分析输出的结果，反正大致可以理解为AEG？
     StateSensitiveGraph<MuArchDomain> arrivalCurveSg(microArchAnaInfo);
+      // 到达曲线是什么
     return dispatchTimingPathAnalysisWeightProvider(&sg, &arrivalCurveSg);
   }
   default:
@@ -521,7 +523,7 @@ boost::optional<BoundItv> dispatchTimingPathAnalysisWeightProvider(
     MuStateGraph<MuState> *sg, MuStateGraph<MuState> *arrivalCurveSg) { // 两个参数本来一样的
   // Create a timing path analysis problem that captures all weight providers
   TimingPathAnalysis<MuState> tpa(sg);
-  tpa.registerWeightProvider();
+  tpa.registerWeightProvider(); // 构造了各种Provider对象，很nb
 
   // LEGACY CODE: perform a co-runner-sensitive analysis
   if (CoRunnerSensitive) { // 不选
@@ -605,11 +607,13 @@ boost::optional<BoundItv> dispatchTimingPathAnalysisWeightProvider(
   std::list<GraphConstraint> constraints;
   // Get Basic constraints such as flow, loop bound, and persistence constraints
 
+  // debug
   // tpa.getBasicConstraints(constraints);
+
   if(isBCET){
     tpa.getLowerConstraints(constraints);
   }else{
-    tpa.getUpperConstraints(constraints); // 这里重要吗？
+    tpa.getUpperConstraints(constraints); // 这里重要吗？这是把persistence分析带来的约束加进去的
   }
   // Add potential interference constraints for dram refreshes, crpd-cost, ...
   tpa.addAvailableInterferenceConstraints(constraints);
@@ -691,7 +695,7 @@ boost::optional<BoundItv> dispatchTimingPathAnalysisWeightProvider(
     }
   } // 有个输出 [WARNING] Registering the result WritebackCleanupCost more than once
 
-  // Handle Compositional Blocking
+  // Handle Compositional Blocking // 这啥意思？
   if (CompAnaType.isSet(CompositionalAnalysisType::SHAREDBUSBLOCKING)) {
     assert(tpa.ubAccessesProvider &&
            "Expected to receive initialized weight provider");

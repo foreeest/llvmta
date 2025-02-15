@@ -27,6 +27,8 @@
 #define CLASSIFICATION_H_
 
 #include "Memory/util/BitstringDomain.h"
+#include "llvm/Support/FileSystem.h" // 输出ur-cfg图片
+#include "llvm/Support/raw_ostream.h"
 
 namespace TimingAnalysisPass {
 
@@ -50,6 +52,10 @@ public:
   explicit Classification(unsigned char value);
 
   friend std::ostream &operator<<(std::ostream &os, const Self &x) {
+    return os << ClassificationNames[x.value];
+  }
+  // 输出ur-cfg所用
+  friend llvm::raw_ostream &operator<<(llvm::raw_ostream &os, const Self &x){
     return os << ClassificationNames[x.value];
   }
 };

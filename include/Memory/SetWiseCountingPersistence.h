@@ -290,46 +290,46 @@ inline bool SetWiseCountingPersistence<T>::lessequal(const Self &y) const {
   return copy == y;
 }
 
-template <CacheTraits *T>
-inline bool
-SetWiseCountingPersistence<T>::isPersistent(const TagType tag) const {
-  // jjy: 我们考虑除了层一cache其他都是共享cache
-  if (SPersistenceA && CoreNums > 0 && T->LEVEL > 1) { // L1的persistence呢？
-    // shared-cache-Persistence-Analysis currently False
-    unsigned index = getindex<T>(r);
-    if (top) {
-      return false;
-    }
-    unsigned CNN = 0;
-    for (std::string &funtion : conflicFunctions) {
-      for (unsigned address : mcif.addressinfo[funtion]) {
-        if (getindex<T>(address) == index && getTag<T>(address) != tag) {
-          unsigned i = 1;
-          for (const Block &B : accessedBlocks) {
-            if (getTag<T>(address) == B.tag) { // 已经在cache里了
-              i = 0;
-              break;
-            }
-          }
-          CNN += i;
-        }
-      }
-    }
-    if (accessedBlocks.size() + accessedArrays.size() + CNN <=
-        T->ASSOCIATIVITY) {
-      return true;
-    }
-    return false;
-  } else {
-    return !top;
-  }
-}
-
 // template <CacheTraits *T>
 // inline bool
 // SetWiseCountingPersistence<T>::isPersistent(const TagType tag) const {
-//   return !top;
+//   // jjy: 我们考虑除了层一cache其他都是共享cache
+//   if (SPersistenceA && CoreNums > 0 && T->LEVEL > 1) { 
+//     // shared-cache-Persistence-Analysis currently False
+//     unsigned index = getindex<T>(r);
+//     if (top) {
+//       return false;
+//     }
+//     unsigned CNN = 0;
+//     for (std::string &funtion : conflicFunctions) {
+//       for (unsigned address : mcif.addressinfo[funtion]) {
+//         if (getindex<T>(address) == index && getTag<T>(address) != tag) {
+//           unsigned i = 1;
+//           for (const Block &B : accessedBlocks) {
+//             if (getTag<T>(address) == B.tag) { // 已经在cache里了
+//               i = 0;
+//               break;
+//             }
+//           }
+//           CNN += i;
+//         }
+//       }
+//     }
+//     if (accessedBlocks.size() + accessedArrays.size() + CNN <=
+//         T->ASSOCIATIVITY) {
+//       return true;
+//     }
+//     return false;
+//   } else {
+//     return !top;
+//   }
 // }
+
+template <CacheTraits *T>
+inline bool
+SetWiseCountingPersistence<T>::isPersistent(const TagType tag) const {
+  return !top;
+}
 
 template <CacheTraits *T>
 inline bool

@@ -89,6 +89,11 @@ bool LoopBoundInfoPass::runOnMachineFunction(MachineFunction &MF) {
     walkLoop(Loop);
   }
   MachineLoopInfo &MLI = getAnalysis<MachineLoopInfo>();
+
+  // // ZW,收集MLI
+  // MachineLoopInfo MLICopy(MLI);
+  // mcif.f2MLI[MF.getName().str()] = MLICopy;
+
   for (auto *MachineLoop : MLI) {
     walkMachineLoop(MachineLoop);
   }
@@ -597,7 +602,7 @@ void LoopBoundInfoPass::computeLoopBoundFromCVDomain(
 template <llvm::Triple::ArchType ISA>
 void LoopBoundInfoPass::computeLoopBounds(
     const std::unordered_map<const llvm::MachineLoop *, const llvm::SCEV *>
-        &LoopMapping,
+        &LoopMapping, // SCEV 即 Scalar Evolution
     std::unordered_map<const llvm::MachineLoop *,
                        std::unordered_map<Context, unsigned>> &LoopBounds,
     const CVAnalysisType<ISA> &CvAnaInfo) {
