@@ -29,6 +29,132 @@
 
 // using namespace TimingAnalysisPass;
 
+/*
+  MI + 完整的函数调用栈，可以在UR-CFG上唯一标识一个MI
+*/
+class CtxMI{
+public:
+  const llvm::MachineInstr* MI;
+  std::vector<const llvm::MachineInstr *> CallSites;
+
+  bool operator==(const CtxMI& other) const {
+      return MI == other.MI && CallSites == other.CallSites;
+  }
+  bool operator!=(const CtxMI& other) const {
+      return !(*this == other);
+  }
+  bool operator<(const CtxMI& other) const { // 为了能作为map的键
+    if (MI != other.MI) {
+      return MI < other.MI;
+    }
+    return CallSites < other.CallSites;
+  }
+
+  std::vector<CtxMI> getSucc(){
+    std::vector<CtxMI> retSucc;  
+
+    // 我们已经消除了伪指令，不会有遍历伪指令后继者的情况
+    assert((!MI->isTransient()) && "We should not see transient instr here");
+
+    // call 和 return(嵌入处理)
+    auto &cg = TimingAnalysisPass::CallGraph::getGraph();
+    if(MI->isCall() && !cg.callsExternal(MI)){
+      for (const auto *callee : cg.getPotentialCallees(MI)) {
+        const MachineBasicBlock *calleeBeginBB = &*callee->begin();
+        const llvm::MachineInstr* calleeBeginMI = &(calleeBeginBB->front());
+        assert((!calleeBeginMI->isTransient())
+          && "First Instr of func shouldn't be transient");
+        CtxMI succCM; // 继承了全部调用者，而且再加上自己
+        succCM.MI = calleeBeginMI;
+        assert(CallSites==this->CallSites && "Just Want to make sure");
+        succCM.CallSites = CallSites;
+        succCM.CallSites.push_back(MI);
+        retSucc.push_back(succCM);
+      }
+      return retSucc;
+    }
+    if(MI->isReturn()){
+      if(CallSites.size()>0){ // 针对main无调用者
+        const llvm::MachineInstr* callsite = CallSites.back();
+        const auto *callsiteMBB = callsite->getParent(); // 这里回到了call语句
+        // 但我们需要call的下一条指令(call不会是Basic Block里最后一条指令)
+        auto it = std::find_if(callsiteMBB->begin(), callsiteMBB->end(),
+                        [callsite](const MachineInstr &Instr) 
+                        { return &Instr == callsite; });
+        if (it != callsiteMBB->end() && 
+          std::next(it) != callsiteMBB->end()) { // 包含了下一条是MBB最后一条的情况了
+          const llvm::MachineInstr* targetMI = &*(std::next(it));
+          // 从源头消除伪指令。我假设transient不会出现在BB头尾
+          if(targetMI->isTransient()){
+            auto tmp_pair = transientHelper(callsiteMBB, targetMI);
+            targetMI = tmp_pair.second;
+          }
+          CtxMI succCM; // 退一次栈
+          succCM.MI = targetMI;
+          succCM.CallSites = CallSites;
+          succCM.CallSites.pop_back();
+          retSucc.push_back(succCM);
+        }else{
+          assert(0&&"This will not happend");
+        }
+      }
+      return retSucc;
+    }
+
+    const llvm::MachineBasicBlock *MBB = MI->getParent();
+    // 可能两种情况，MBB内下一条MI，或者MBB最后一条MI到后继MBB的第一条MI
+    if(MI == &(MBB->back())){
+      for (auto succit = MBB->succ_begin(); succit != MBB->succ_end(); ++succit){
+        const llvm::MachineBasicBlock *targetMBB = *succit;
+        const llvm::MachineInstr* targetMI = &(targetMBB->front());
+        CtxMI succCM; 
+        succCM.MI = targetMI;
+        succCM.CallSites = CallSites;
+        retSucc.push_back(succCM);
+      }
+    }else{
+      const llvm::MachineInstr* tmpMI = MI;
+      auto it = std::find_if(MBB->begin(), MBB->end(),
+                [tmpMI](const MachineInstr &Instr) { return &Instr == tmpMI; });
+      if (it != MBB->end() && std::next(it) != MBB->end()) {
+        const llvm::MachineInstr* targetMI = &*(std::next(it));
+        // 从源头消除伪指令
+        // 我假设transient不会出现在BB头尾
+        if(targetMI->isTransient()){
+          auto tmp_pair = transientHelper(MBB, targetMI);
+          targetMI = tmp_pair.second;
+        }
+        CtxMI succCM; 
+        succCM.MI = targetMI;
+        succCM.CallSites = CallSites;
+        retSucc.push_back(succCM);
+      }
+    }
+    return retSucc;
+  }
+
+private:
+  // 跳过transient的办法就是拿到它的第一个非transient后继(可能递归执行)
+  // 目前只考虑单个transient唯一后继的情况
+  std::pair<const llvm::MachineBasicBlock*, 
+    const llvm::MachineInstr*> transientHelper(
+    const llvm::MachineBasicBlock* MBB, 
+    const llvm::MachineInstr* MI){
+    if(!MI->isTransient()){
+      return std::make_pair(MBB, MI);
+    }
+    assert((MI != &(MBB->back()))
+      && "I assume transient instr isn't last instr of bb, but this indicates I am wrong");
+    auto it = std::find_if(MBB->begin(), MBB->end(),
+                       [MI](const MachineInstr &Instr) { return &Instr == MI; });
+    if (it != MBB->end() && std::next(it) != MBB->end()) {
+      const llvm::MachineInstr* targetMI = &*(std::next(it));
+      return transientHelper(MBB, targetMI);
+    }
+  }
+};
+
+
 struct X_Class {
   unsigned x;
   TimingAnalysisPass::dom::cache::Classification classification;
@@ -37,7 +163,7 @@ struct X_Class {
 /// 提供 ZW paper f函数运算所需的信息的查找方式
 class UnorderedRegion{
 public:
-  std::map<const llvm::MachineInstr *, X_Class> mi2xclass;
+  std::map<CtxMI, X_Class> mi2xclass;
 };
 
 class CEOP{
@@ -46,16 +172,7 @@ public:
   // 这里已经包含了排序信息，即UR编号
 };
 
-/*
-  MI + 完整的函数调用栈，可以在UR-CFG上唯一标识一个MI
-*/
-class CtxMI{
-public:
-  const llvm::MachineInstr* MI;
-  std::vector<const llvm::MachineInstr *> CallSites;
-};
-
-/* 这个类就是维护MSG的 */
+/* 这个类维护MSG */
 class Multicoreinfo {
 private:
   // CoreNum -> <Earlest Start, Latest Stop>list
@@ -104,7 +221,7 @@ public:
         " Core"<<interCore<<" InterUR:"<<interUR<<"\n";
     }
     for(const auto &local_pair:local_ur.mi2xclass){
-      const llvm::MachineInstr* local_mi = local_pair.first;
+      const llvm::MachineInstr* local_mi = local_pair.first.MI;
       unsigned tmp_exe_times = local_pair.second.x;
       if(local_pair.second.classification!=
         TimingAnalysisPass::dom::cache::CL_HIT){ 
@@ -118,7 +235,7 @@ public:
       }
     }
     for(const auto &inter_pair:inter_ur.mi2xclass){
-      const llvm::MachineInstr* inter_mi = inter_pair.first;
+      const llvm::MachineInstr* inter_mi = inter_pair.first.MI;
       if((inter_pair.second.classification!=
         TimingAnalysisPass::dom::cache::CL_HIT)&&
         (inter_pair.second.classification!=
@@ -148,50 +265,12 @@ public:
     // line_size为64byte的话，低6位地址是offset；1024set的话，再过10位是index
   }
 
-  // helper function
-
-  unsigned getbound(const MachineBasicBlock *MBB,
-                    const TimingAnalysisPass::Context &ctx) {
-    for (const MachineLoop *loop :
-        TimingAnalysisPass::LoopBoundInfo->getAllLoops()) {
-      if (MBB->getParent() == loop->getHeader()->getParent() &&
-          loop->contains(MBB)) {
-        if (TimingAnalysisPass::LoopBoundInfo->hasUpperLoopBound(
-                loop, TimingAnalysisPass::Context())) {
-          return TimingAnalysisPass::LoopBoundInfo->getUpperLoopBound(
-              loop, TimingAnalysisPass::Context());
-        }
-      }
-    }
-    return 1; // 没bound默认1次了
-  }
-  /*
-    搞不了自底向上，搞自顶向下也是ok，在一个函数的所有loop里搜，搜到此BB在此loop里即可取
-    优先取更深层的loop；一个函数多个循环是可以的，一个Basic Block足以定位哪个循环
-  */
-  unsigned getbound_plus(){
-    return 1;
-  }
-
-  // helper function:TODO有待优化；需要假设循环次数是已知的
-  unsigned getExeTimes(const llvm::MachineInstr* mi){ // TODO改为CtxMI
-    const llvm::MachineBasicBlock* mbb = mi->getParent();
-    // const llvm::MachineLoop* ml = llvm::MachineLoopInfo::getLoopFor(mbb);
-    unsigned tmpBound = getbound(mbb, TimingAnalysisPass::Context());
-    return tmpBound;
-  }
-
-  // 收集XClass信息(假设没有不同核的重名函数)
+  // 收集XClass信息(假设没有不同核的重名函数) // TODO print_mi_cfg也得改
   void addXClass(unsigned core, std::string function, const llvm::MachineInstr* mi, 
     TimingAnalysisPass::dom::cache::Classification classification,
-    unsigned x
+    unsigned x // 目前收集的位置没有x信息所以闲置
   ){
-    X_Class obj;
-    // 使用mi计算x
-    // obj.x = x; // 直接忽略这个参数
-    obj.x = getExeTimes(mi);
-    obj.classification = classification;
-    mi_xclass[core][function][mi] = obj;
+    mi_class[core][function][mi] = classification;
     return;
   }
 
@@ -355,25 +434,27 @@ public:
 
 private:
   // module1: 暂存对一个task的UR分析数据，对应oi-wiki tarjan算法
-  std::map<const llvm::MachineInstr*, unsigned> dfn;
-  std::map<const llvm::MachineInstr*, unsigned> low;
+  std::map<CtxMI, unsigned> dfn;
+  std::map<CtxMI, unsigned> low;
   unsigned dfncnt;
-  std::map<unsigned, const llvm::MachineInstr*> ur_stack;
-  std::map<const llvm::MachineInstr*, unsigned> in_stack;
+  std::map<unsigned, CtxMI> ur_stack;
+  std::map<CtxMI, unsigned> in_stack;
   unsigned stack_pt;
-  std::map<const llvm::MachineInstr*, unsigned> mi_ur; // MI所在ur_id
+  std::map<CtxMI, unsigned> mi_ur; // MI所在ur_id
   std::map<unsigned, unsigned> ur_size; // 指含有多少条MI
   unsigned ur_id; // 强连通分量号，这个序号应该没有什么含义
-  std::map<const llvm::MachineInstr*, const llvm::MachineBasicBlock*> mi_mbb; // MI所在MBB
 
   // module2: 新图，UR的出入边包含原来属于UR的MI的所有出入边
   std::map<unsigned, std::vector<unsigned>> ur_graph;
-  std::map<unsigned, std::vector<const llvm::MachineInstr*>> ur_mi; // 没有顺序
+  std::map<unsigned, std::vector<CtxMI>> ur_mi; // ur内部的MI没有顺序
 
   // module3： 除了这个module其它3个module都是暂存的
+  std::map<unsigned, std::map<std::string, // 先存下分类信息
+    std::map<const llvm::MachineInstr*, 
+      TimingAnalysisPass::dom::cache::Classification>>> mi_class;
   std::map<unsigned, std::map<std::string, // core, function, mi -> xclass
-    std::map<const llvm::MachineInstr*, X_Class>>> mi_xclass; // TODO 先存着class
-    // 后面需要扩展为 CtxMI->xclass
+    std::map<CtxMI, X_Class>>> mi_xclass; // TODO 先存着class
+    // 后面需要扩展为 CtxMI->xclass，或者直接算好也行
   unsigned cur_core;
   std::string cur_func;
 
@@ -382,8 +463,7 @@ private:
   std::vector<CEOP> tmpCEOPs; // 暂存本task上所有路径
 
   // 显式收集MI-CFG，用于debug
-  std::map<const llvm::MachineInstr*, 
-    std::vector<const llvm::MachineInstr*>> mi_cfg;
+  std::map<CtxMI,std::vector<CtxMI>> mi_cfg; // TODO 输出修改
 
 public:
   /// UR于CEOP的计算函数
@@ -392,6 +472,7 @@ public:
     auto MF = TimingAnalysisPass::machineFunctionCollector->
       getFunctionByName(function);
     const MachineBasicBlock *analysisStart = &*(MF->begin());
+    const llvm::MachineInstr* firstMI = &(analysisStart->front());
     // 每次需要清空上述用于暂存的数据结构
     dfncnt = stack_pt = ur_id = 0;
     // 新的task清空全部暂存的数据结构；map用迭代器清空会把实例都清了，这里就只清指针
@@ -401,7 +482,6 @@ public:
     in_stack.clear();
     mi_ur.clear();
     ur_size.clear();
-    mi_mbb.clear();
     ur_graph.clear();
     ur_mi.clear();
     tmpCEOPs.clear();
@@ -410,15 +490,15 @@ public:
     cur_core = core;
     cur_func = function;
 
-    const llvm::MachineInstr* firstMI = &(analysisStart->front());
-    tarjan(analysisStart, firstMI); // module1: 在CFG上获取UR
+    CtxMI firstCM;
+    firstCM.MI = firstMI;
+    tarjan(firstCM); // module1: 在CFG上获取UR
+    getXClass();// module3: 需要先收集x_class信息，这样下一步得到的信息才完整
     if(ZWDebug){
       print_mi_cfg(function); // debug
     }
     collectUrInfo(); // module2: 建立UR图和ur为键的信息映射
-    // module3: 需要先收集x_class信息，这样下一步得到的信息才完整
-    // DAG的DFS标记CEOP
-    collectCEOPInfo(firstMI); // module4: dfs遍历图，并同时建立起CEOP的数据结构
+    collectCEOPInfo(firstCM); // module4: dfs遍历图，并同时建立起CEOP的数据结构
     CEOPs[core][function] = tmpCEOPs;    
 
     if(ZWDebug){
@@ -434,9 +514,9 @@ public:
   }
 
   // helper, 在此将所有CEOP所需数据存入tmpCEOPs
-  void ceopDfs(unsigned u){
+  void ceopDfs(unsigned u){ 
     UnorderedRegion curUR{};
-    std::vector<const llvm::MachineInstr*> curMIs = ur_mi[u];
+    std::vector<CtxMI> curMIs = ur_mi[u];
     for(int i=0;i<curMIs.size();i++){
       X_Class obj = mi_xclass[cur_core][cur_func][curMIs[i]];
       // if(curMIs[i]->isTransient()) continue; // 这里包括伪指令等
@@ -463,32 +543,29 @@ public:
   }
 
   // 构造之前定义的CEOP和UR对象，UR中的X_Class内容先设置为空
-  void collectCEOPInfo(const llvm::MachineInstr* firstMI){
-    unsigned s = mi_ur[firstMI];
+  void collectCEOPInfo(CtxMI firstCM){
+    unsigned s = mi_ur[firstCM];
     ceopDfs(s);
   }
 
   // 反过来获取UR -> (出边、 MI);也即包含了建立UR图
-  void collectUrInfo(){
+  void collectUrInfo(){ // 改为 ur_ctxmi
     for(auto m_u:mi_ur){
-      const llvm::MachineInstr* mi_ptr = m_u.first;
+      CtxMI tmp_cm = m_u.first;
       unsigned ur_id_num = m_u.second;
       auto it = ur_graph.find(ur_id_num);
       if (it == ur_graph.end()){ // 首次记录某个UR
         std::vector<unsigned> ur_out_edge_vec;
         ur_graph[ur_id_num] = ur_out_edge_vec;
-        std::vector<const llvm::MachineInstr*> ur_mi_vec;
+        std::vector<CtxMI> ur_mi_vec;
         ur_mi[ur_id_num] = ur_mi_vec;
       }
       // 在ur中添加mi
-      ur_mi[ur_id_num].push_back(mi_ptr);
+      ur_mi[ur_id_num].push_back(tmp_cm);
       // 在ur中添加后继ur
-      const llvm::MachineBasicBlock* mbb_ptr = mi_mbb[mi_ptr];
-      std::vector<std::pair<const llvm::MachineBasicBlock*, 
-        const llvm::MachineInstr*>> succ_mis = getMiCFGSucc(mbb_ptr, mi_ptr);
-      for (auto succ_mi:succ_mis){
-        const llvm::MachineInstr* target_mi_ptr = succ_mi.second;
-        unsigned target_ur_id_num = mi_ur[target_mi_ptr];
+      std::vector<CtxMI> succ_cms = tmp_cm.getSucc();
+      for (auto succ_cm:succ_cms){
+        unsigned target_ur_id_num = mi_ur[succ_cm];
         if(ur_id_num!=target_ur_id_num){
           ur_graph[ur_id_num].push_back(target_ur_id_num);
         }
@@ -508,9 +585,17 @@ public:
         errs() << "Error opening file: " << EC.message() << "\n";
     }
     File << "digraph \"MachineCFG of " + function + "\" {\n";
+    // 为CtxMI分配简短ID
+    std::map<CtxMI, unsigned> cm_id_map;
+    unsigned cnt = 0;
+    for(auto tmp_pair:mi_cfg){
+      CtxMI CM = tmp_pair.first;
+      cm_id_map[CM] = cnt++;
+    }
     for(auto tmp_pair:mi_cfg){
       // 函数获取或分配颜色
-      const llvm::MachineInstr *MI = tmp_pair.first;
+      CtxMI CM = tmp_pair.first;
+      const llvm::MachineInstr* MI = CM.MI;
       const std::string func_name = 
         MI->getParent()->getParent()->getFunction().getName().str();
       if (func_color_map.find(func_name) == func_color_map.end()) {
@@ -519,160 +604,141 @@ public:
       }
       const std::string color = func_color_map[func_name];
       // 节点
-      File << "  " << "Node" << MI << " [label=\"MI" << MI << "\\l  ";  
+      File << "  " << "Node" << cm_id_map[CM] << " [label=\"MI" << MI << "\\l  ";  
       MI->print(File, false, false, true);
       File << "\\l  ";
       std::string tmp_flag = (MI->isTransient())?"True":"False";
       File << "isTransient:" << tmp_flag << "\\l  ";
-      File << "ExeCnt:" << mi_xclass[cur_core][function][MI].x << " "
-        << "CHMC:" << mi_xclass[cur_core][function][MI].classification
+      File << "ExeCnt:" << mi_xclass[cur_core][function][CM].x << " "
+        << "CHMC:" << mi_xclass[cur_core][function][CM].classification
         << "\\l  ";
       File << "in BB" << MI->getParent()->getNumber() << "\\l  ";
-      File << "in UR" << mi_ur[MI] << "\\l  ";
+      File << "in UR" << mi_ur[CM] << "\\l  ";
       File << "in Func: " << 
         MI->getParent()->getParent()->getFunction().getName() << "\\l";   
       File << "\" fillcolor=\"" << color << "\" style=\"filled\"];\n"; 
       // 边
-      std::vector<const llvm::MachineInstr *> tmp_MIs = tmp_pair.second;
-      for(auto tmp_MI:tmp_MIs){
-        File << "  " << "Node" << MI << " -> " << "Node" << tmp_MI << ";\n";
+      std::vector<CtxMI> tmp_CMs = tmp_pair.second;
+      for(auto tmp_CM:tmp_CMs){
+        File << "  " << "Node" << cm_id_map[CM] << " -> " 
+          << "Node" << cm_id_map[tmp_CM] << ";\n";
       }
     }
     File << "}\n";
   }
 
-  // 要带着MBB来遍历MI-CFG
-  void tarjan(const llvm::MachineBasicBlock* MBB, 
-    const llvm::MachineInstr* MI){
-    mi_mbb[MI] = MBB; // 先收集一手MI属于哪个MBB，后面UR建图所用
+  void getXClass(){ // 需要cur_core core_func
+    assert(mi_class[cur_core][cur_func].size() > 0 && 
+      "We must collect CHMC first");
+    for(auto tmp_pair:mi_ur){
+      CtxMI tmp_cm = tmp_pair.first;
+      X_Class obj;
+      obj.classification = mi_class[cur_core][cur_func][tmp_cm.MI];
+      obj.x = getGlobalUpBd(tmp_cm);
+      mi_xclass[cur_core][cur_func][tmp_cm] = obj;
+    }
+  }
 
-    low[MI] = dfn[MI] = ++dfncnt;
-    ur_stack[++stack_pt] = MI; 
-    in_stack[MI] = 1;
-
-    std::vector<std::pair<const llvm::MachineBasicBlock*, 
-      const llvm::MachineInstr*>> SUCCs = getMiCFGSucc(MBB, MI);
-
-    // 收集mi_cfg，用来输出debug // 改为ctxmi
-    if(mi_cfg.find(MI)==mi_cfg.end()){
-      std::vector<const llvm::MachineInstr*> tmp_mi_succ;
-      for(auto tmp_pair:SUCCs){
-        const llvm::MachineInstr* tmp_mi = tmp_pair.second;
-        tmp_mi_succ.push_back(tmp_mi);
+  /*
+      搞不了自底向上，搞自顶向下也是ok，在一个函数的所有loop里搜，搜到此BB在此loop里即可取
+    优先取更深层的loop；一个函数多个循环是可以的，一个Basic Block足以定位哪个循环
+      递归函数：一个CM负责处理自己所在函数的循环，即处理一层token，如果多层，外层交给callsite
+    处理。于是我们可以处理任意层函数和任意层循环。
+      一个local函数中，loop再多也就是个森林，通向我们要寻找的那个BB路径是唯一的。
+  */
+  unsigned getGlobalUpBd(CtxMI CM){
+    const llvm::MachineInstr* MI = CM.MI;
+    const llvm::MachineBasicBlock* MBB = MI->getParent();
+    const llvm::MachineFunction* MF = MBB->getParent();
+    unsigned x_local = 1;
+    // local execute times
+    for (const MachineLoop *loop :
+        TimingAnalysisPass::LoopBoundInfo->getAllLoops()) {
+      if (MF == loop->getHeader()->getParent() &&
+          loop->contains(MBB)) { // 这里得到的就是路径上的一层loop，需要向下、向上搜
+        x_local *= bd_helper1(MBB, loop);
+        if(loop->getParentLoop()!=nullptr){
+          x_local *= bd_helper2(loop->getParentLoop());
+        }  
+        break;
       }
-      mi_cfg[MI] = tmp_mi_succ;
+    }
+    if(CM.CallSites.size()!=0){ // 非最外层函数
+      const llvm::MachineInstr* callsite = CM.CallSites.back();
+      std::vector<const llvm::MachineInstr *> tmpCS = CM.CallSites;
+      tmpCS.pop_back();
+      CtxMI tmpCM;
+      tmpCM.MI = callsite;
+      tmpCM.CallSites = tmpCS;
+      x_local *= getGlobalUpBd(tmpCM);
+    }
+    return x_local;
+  }
+
+  unsigned bd_helper1(const llvm::MachineBasicBlock* MBB,
+    const llvm::MachineLoop *Loop){
+    unsigned x_local = 1;
+    if (TimingAnalysisPass::LoopBoundInfo->hasUpperLoopBound(
+                Loop, TimingAnalysisPass::Context())) {
+      x_local *= TimingAnalysisPass::LoopBoundInfo->getUpperLoopBound(
+              Loop, TimingAnalysisPass::Context());
+              // 此函数加了个else已经是以manual而非SCEV优先
+    }
+    for (auto *Subloop : Loop->getSubLoops()) {
+      if(Subloop->getParentLoop()==Loop // 必须是直接儿子，不能是孙子等
+        && Subloop->contains(MBB)){
+        x_local *= bd_helper1(MBB, Subloop);
+        break; // 不会有两个同时包含的
+      }
+    }
+    return x_local;
+  }
+
+  unsigned bd_helper2(const llvm::MachineLoop *Loop){
+    unsigned scalar = 1;
+    if (TimingAnalysisPass::LoopBoundInfo->hasUpperLoopBound(
+                Loop, TimingAnalysisPass::Context())) {
+      scalar *= TimingAnalysisPass::LoopBoundInfo->getUpperLoopBound(
+              Loop, TimingAnalysisPass::Context());     
+    }else{
+      assert(0 && "why we have a loop but no LoopBound?");
+    }
+    if(Loop->getParentLoop()==nullptr){ // 已经是最外层
+      return scalar;
+    }else{
+      scalar *= bd_helper2(Loop->getParentLoop());
+    }
+    return scalar;
+  }
+
+  // 遍历MI-CFG
+  void tarjan(CtxMI CM){
+    low[CM] = dfn[CM] = ++dfncnt;
+    ur_stack[++stack_pt] = CM; 
+    in_stack[CM] = 1;
+    std::vector<CtxMI> SUCCs = CM.getSucc();
+
+    // 收集mi_cfg，用来输出debug 
+    if(mi_cfg.find(CM)==mi_cfg.end()){
+      mi_cfg[CM] = SUCCs;
     }
 
     for(auto SUCC:SUCCs){
-      const llvm::MachineBasicBlock* SUCC_MBB = SUCC.first;
-      const llvm::MachineInstr* SUCC_MI = SUCC.second;
-      if(dfn.find(SUCC_MI)==dfn.end()){ // 从未访问
-        tarjan(SUCC_MBB, SUCC_MI);
-        low[MI] = std::min(low[MI], low[SUCC_MI]); // 回溯，可能子树somehow返祖
-      }else if(in_stack[SUCC_MI]){
-        low[MI] = std::min(low[MI], dfn[SUCC_MI]);
+      if(dfn.find(SUCC)==dfn.end()){ // 从未访问
+        tarjan(SUCC);
+        low[CM] = std::min(low[CM], low[SUCC]); // 回溯，可能子树somehow返祖
+      }else if(in_stack[SUCC]){
+        low[CM] = std::min(low[CM], dfn[SUCC]);
       }
     }
-    if (dfn[MI] == low[MI]) { // 回溯的时候再消，eg无子直接自成1个分量
+    if (dfn[CM] == low[CM]) { // 回溯的时候再消，eg无子直接自成1个分量
       // 所以最后回访到子树的根时，别的都pop掉了
       ++ur_id;
       do {
         mi_ur[ur_stack[stack_pt]] = ur_id;
         ur_size[ur_id] += 1;
         in_stack[ur_stack[stack_pt]] = 0;
-      } while (ur_stack[stack_pt--] != MI); 
-    }
-  }
-  
-  // 返回一条指令的后继者(一个MBB里的MI数应该不会太多， 所以这里不会太耗时)
-  std::vector<std::pair<const llvm::MachineBasicBlock*, 
-    const llvm::MachineInstr*>> getMiCFGSucc(
-      const llvm::MachineBasicBlock* MBB, 
-      const llvm::MachineInstr* MI){
-    std::vector<std::pair<const llvm::MachineBasicBlock*, 
-      const llvm::MachineInstr*>> retSucc;  
-    
-    // 我们已经消除了伪指令，不会有遍历伪指令后继者的情况
-    assert((!MI->isTransient()) && "We should not see transient instr here");
-
-    // call 和 return(嵌入处理)
-    auto &cg = TimingAnalysisPass::CallGraph::getGraph();
-    if(MI->isCall() && !cg.callsExternal(MI)){
-      for (const auto *callee : cg.getPotentialCallees(MI)) {
-        const MachineBasicBlock *calleeBeginBB = &*callee->begin();
-        const llvm::MachineInstr* calleeBeginMI = &(calleeBeginBB->front());
-        assert((!calleeBeginMI->isTransient())
-          && "First Instr of func shouldn't be transient");
-        retSucc.push_back(std::make_pair(calleeBeginBB, calleeBeginMI));
-      }
-      return retSucc;
-    }
-    if(MI->isReturn()){
-      const auto *currentFunc = MI->getParent()->getParent();
-      for (auto &callsite : cg.getCallSites(currentFunc)) { 
-        // 如果将函数理解为内嵌在调用方的语句，那么被多次调用的函数会被共享
-        const auto *callsiteMBB = callsite->getParent(); // 这里回到了call语句
-        // 但我们需要call的下一条指令(call不会是Basic Block里最后一条指令)
-        auto it = std::find_if(callsiteMBB->begin(), callsiteMBB->end(),
-                       [callsite](const MachineInstr &Instr) 
-                        { return &Instr == callsite; });
-        if (it != callsiteMBB->end() && 
-          std::next(it) != callsiteMBB->end()) { // 包含了下一条是最后一条
-          const llvm::MachineInstr* targetMI = &*(std::next(it));
-          // 从源头消除伪指令
-          // 我假设transient不会出现在BB头尾
-          if(targetMI->isTransient()){
-            auto tmp_pair = transientHelper(callsiteMBB, targetMI);
-            retSucc.push_back(tmp_pair);
-          }else{
-            retSucc.push_back(std::make_pair(callsiteMBB, targetMI));
-          }
-        }
-      }
-      return retSucc;
-    }
-
-    // 可能两种情况，MBB内下一条MI，或者MBB最后一条MI到后继MBB的第一条MI
-    if(MI == &(MBB->back())){
-      for (auto succit = MBB->succ_begin(); succit != MBB->succ_end(); ++succit){
-        const llvm::MachineBasicBlock *targetMBB = *succit;
-        const llvm::MachineInstr* targetMI = &(targetMBB->front());
-        retSucc.push_back(std::make_pair(targetMBB, targetMI));
-      }
-    }else{
-      auto it = std::find_if(MBB->begin(), MBB->end(),
-                       [MI](const MachineInstr &Instr) { return &Instr == MI; });
-      if (it != MBB->end() && std::next(it) != MBB->end()) {
-        const llvm::MachineInstr* targetMI = &*(std::next(it));
-        // 从源头消除伪指令
-        // 我假设transient不会出现在BB头尾
-        if(targetMI->isTransient()){
-          auto tmp_pair = transientHelper(MBB, targetMI);
-          retSucc.push_back(tmp_pair);
-        }else{
-          retSucc.push_back(std::make_pair(MBB, targetMI));
-        }
-      }
-    }
-    return retSucc;
-  }
-
-  // 跳过transient的办法就是拿到它的第一个非transient后继(可能递归执行)
-  // 目前只考虑单个transient唯一后继的情况
-  std::pair<const llvm::MachineBasicBlock*, 
-    const llvm::MachineInstr*> transientHelper(
-    const llvm::MachineBasicBlock* MBB, 
-    const llvm::MachineInstr* MI){
-    if(!MI->isTransient()){
-      return std::make_pair(MBB, MI);
-    }
-    assert((MI != &(MBB->back()))
-      && "I assume transient instr isn't last instr of bb, but this indicates I am wrong");
-    auto it = std::find_if(MBB->begin(), MBB->end(),
-                       [MI](const MachineInstr &Instr) { return &Instr == MI; });
-    if (it != MBB->end() && std::next(it) != MBB->end()) {
-      const llvm::MachineInstr* targetMI = &*(std::next(it));
-      return transientHelper(MBB, targetMI);
+      } while (ur_stack[stack_pt--] != CM); 
     }
   }
 };

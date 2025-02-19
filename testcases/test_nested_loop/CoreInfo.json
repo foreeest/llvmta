@@ -1,0 +1,22 @@
+[
+    {
+        "core": 0,
+        "tasks": [
+            {
+                "function": "main",
+                "deadline": 1000,
+                "period": 9300
+            }
+        ]
+    },
+    {
+        "core": 1,
+        "tasks": [
+            {
+                "function": "loopsinmultiplefunction_main",
+                "deadline": 2000,
+                "period": 4995
+            }
+        ]
+    }
+]

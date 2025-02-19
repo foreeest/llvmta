@@ -602,7 +602,7 @@ void LoopBoundInfoPass::computeLoopBoundFromCVDomain(
 template <llvm::Triple::ArchType ISA>
 void LoopBoundInfoPass::computeLoopBounds(
     const std::unordered_map<const llvm::MachineLoop *, const llvm::SCEV *>
-        &LoopMapping, // SCEV 即 Scalar Evolution
+        &LoopMapping, 
     std::unordered_map<const llvm::MachineLoop *,
                        std::unordered_map<Context, unsigned>> &LoopBounds,
     const CVAnalysisType<ISA> &CvAnaInfo) {
